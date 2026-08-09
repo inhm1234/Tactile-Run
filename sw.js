@@ -1,6 +1,6 @@
-const CACHE='tactile-run-v5-character-controls';
+const CACHE='tactile-run-v6-narrow-keys-contact-once';
 const ASSETS=[
- './','./index.html','./game.js?v=5-character-controls','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png',
+ './','./index.html','./game.js?v=6-narrow-keys-contact-once','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png',
  './keyboard1.wav','./keyboard2.wav','./keyboard3.wav','./keyboard4.wav',
  './wax1.wav','./wax2.wav','./wax3.wav','./wax4.wav','./wax5.wav',
  './sprites/run1.png','./sprites/run2.png','./sprites/run3.png','./sprites/run4.png',

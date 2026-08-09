@@ -7,7 +7,7 @@ const hpText=document.getElementById('hpText'),hpFill=document.getElementById('h
 const comboN=document.getElementById('comboN'),comboT=document.getElementById('comboT'),toast=document.getElementById('toast'),hint=document.getElementById('hint'),bestText=document.getElementById('bestText'),soundStatus=document.getElementById('soundStatus');
 let W=960,H=540,dpr=1,groundY=370,physicsScale=1,last=0,state='menu',deferredPrompt=null;
 let audio=null,master=null,noiseBuffer=null;
-let keyStepTimer=0,keyStepSide=0,keyFlash=0;
+let keyFlash=0,keyboardTravel=0,lastSteppedKey=null,pressedKeyId=null;
 
 const SAMPLE_FILES={
  keyboard:['./keyboard1.wav','./keyboard2.wav','./keyboard3.wav','./keyboard4.wav'],
@@ -79,10 +79,34 @@ function playSound(kind,perfect=false){
 function jumpSound(){if(!audio)return;const t=audio.currentTime,o=audio.createOscillator(),g=envGain(t,.002,.07,.18);o.frequency.setValueAtTime(120,t);o.frequency.exponentialRampToValueAtTime(210,t+.07);o.connect(g);o.start(t);o.stop(t+.08)}
 function playBlueSwitch(accent=false){playRecordedSample('keyboard',accent?.78:.52)}
 
+function keyboardMetrics(){
+ const keyW=Math.max(45,W*.13)*.60;
+ const gap=5,stride=keyW+gap;
+ return {keyW,gap,stride};
+}
+function groundKeyUnderPlayer(){
+ if(!player||!player.onGround)return null;
+ const {keyW,stride}=keyboardMetrics();
+ const travel=keyboardTravel;
+ const cycle=Math.floor(travel/stride),scroll=travel-cycle*stride;
+ const footX=player.x+player.w*.50;
+ const localIndex=Math.floor((footX+scroll)/stride);
+ const keyX=localIndex*stride-scroll;
+ if(footX<keyX||footX>keyX+keyW)return null;
+ return localIndex+cycle;
+}
+function triggerKeyboardContact(accent=false){
+ const keyId=groundKeyUnderPlayer();
+ if(keyId===null)return;
+ if(keyId!==lastSteppedKey){
+  lastSteppedKey=keyId;pressedKeyId=keyId;keyFlash=.12;playBlueSwitch(accent);
+ }
+}
+
 function setAction(action){if(!player||player.action===action)return;player.action=action;player.actionTime=0}
 function reset(){
  player={x:W*.16,y:groundY-68,w:58,h:68,vy:0,onGround:true,action:'run',actionTime:0,slideTimer:0,crouchHeld:false};
- objects=[];particles=[];distance=0;hp=100;combo=0;spawnX=W+100;speed=Math.max(220,Math.min(315,H*.60));runTime=0;shake=0;flash=0;keyStepTimer=.05;keyStepSide=0;keyFlash=0;
+ objects=[];particles=[];distance=0;hp=100;combo=0;spawnX=W+100;speed=Math.max(220,Math.min(315,H*.60));runTime=0;shake=0;flash=0;keyFlash=0;keyboardTravel=0;lastSteppedKey=null;pressedKeyId=null;
  for(let i=0;i<6;i++)spawnObject(i<2?W+160+i*180:undefined);updateHud();
 }
 function spawnObject(xOverride){
@@ -125,23 +149,18 @@ function step(dt){
  if(player.slideTimer>0)player.slideTimer=Math.max(0,player.slideTimer-dt);
  player.vy+=G*physicsScale*dt;player.y+=player.vy*dt;
  const wasGrounded=player.onGround;
+ keyboardTravel+=speed*dt*.38;
  if(player.y+player.h>=groundY){
   player.y=groundY-player.h;player.vy=0;player.onGround=true;
-  if(!wasGrounded){playBlueSwitch(true);keyFlash=.19;keyStepTimer=.14}
- }else player.onGround=false;
+ }else{
+  player.onGround=false;
+  lastSteppedKey=null;
+ }
 
  if(player.onGround){
   if(player.slideTimer>0)setAction('slide');else if(player.crouchHeld)setAction('crouch');else setAction('run');
+  triggerKeyboardContact(!wasGrounded||player.action==='slide');
  }else setAction('jump');
-
- if(player.onGround){
-  keyStepTimer-=dt;
-  if(keyStepTimer<=0){
-   playBlueSwitch(player.action==='slide');keyStepSide=1-keyStepSide;keyFlash=.12;
-   const actionBias=player.action==='slide'?.04:player.action==='crouch'?.025:0;
-   keyStepTimer=Math.max(.135,.205-(speed-220)*.00020+actionBias);
-  }
- }
 
  for(const o of objects){
   o.x-=speed*dt;if(o.compress>0)o.compress=Math.max(0,o.compress-dt*2.8);
@@ -164,13 +183,13 @@ function drawBackground(t){
  ctx.fillStyle='#fff';ctx.globalAlpha=.72;for(let i=0;i<5;i++){let x=((i*137-t*10)%(W+180))-80,y=90+(i%3)*90;ctx.beginPath();ctx.ellipse(x,y,38,16,0,0,Math.PI*2);ctx.ellipse(x+31,y+4,28,13,0,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;
  ctx.fillStyle='#20242c';ctx.fillRect(0,groundY-9,W,H-groundY+9);ctx.fillStyle='#141820';ctx.fillRect(0,groundY-8,W,5);
  const labels=['Q','W','E','R','T','Y','U','I','O','P','A','S','D','F','G','H','J','K','L','Z','X','C','V','B','N','M'];
- const keyW=Math.max(45,W*.13),gap=5,stride=keyW+gap,scroll=(t*speed*.38)%stride;
+ const {keyW,gap,stride}=keyboardMetrics(),cycle=Math.floor(keyboardTravel/stride),scroll=keyboardTravel-cycle*stride;
  const rows=[{y:groundY-6,h:39,offset:0,scale:1},{y:groundY+38,h:43,offset:keyW*.42,scale:1.04},{y:groundY+86,h:48,offset:-keyW*.18,scale:1.09},{y:groundY+139,h:52,offset:keyW*.30,scale:1.15}];
  for(let r=0;r<rows.length;r++){
   const row=rows[r],kw=keyW*row.scale,st=kw+gap*row.scale,rowScroll=(scroll*row.scale)%st;
   for(let i=-3;i<Math.ceil(W/st)+4;i++){
-   const x=i*st-rowScroll+row.offset,idx=((i+Math.floor(t*speed*.38/stride)+r*5)%labels.length+labels.length)%labels.length;
-   const isUnderFoot=r===0&&player&&player.onGround&&x<player.x+player.w*.82&&x+kw>player.x+player.w*.18,pressed=isUnderFoot&&keyFlash>.025,press=pressed?Math.min(5,2+keyFlash*18):0;
+   const x=i*st-rowScroll+row.offset,worldId=i+Math.floor(keyboardTravel/st),idx=((worldId+r*5)%labels.length+labels.length)%labels.length;
+   const pressed=r===0&&worldId===pressedKeyId&&keyFlash>.025,press=pressed?Math.min(5,2+keyFlash*18):0;
    ctx.fillStyle='#0b0e13';roundedRect(x,row.y+5,kw,row.h,7);ctx.fill();ctx.fillStyle=pressed?'#39414c':'#444d5a';roundedRect(x+1,row.y+2+press,kw-2,row.h-5,7);ctx.fill();ctx.fillStyle=pressed?'#7a8795':'#66717f';roundedRect(x+3,row.y+press,kw-6,row.h-9,6);ctx.fill();
    ctx.strokeStyle='#8994a2';ctx.globalAlpha=.35;ctx.lineWidth=1;ctx.stroke();ctx.globalAlpha=1;ctx.fillStyle='#e8edf3';ctx.globalAlpha=.82;ctx.font=`700 ${Math.max(9,11*row.scale)}px system-ui,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(labels[idx],x+kw/2,row.y+press+(row.h-9)/2);ctx.globalAlpha=1;
    if(pressed){ctx.fillStyle='#47b8ff';ctx.globalAlpha=Math.min(.9,keyFlash*6);roundedRect(x+kw*.37,row.y+row.h-4,kw*.26,5,2);ctx.fill();ctx.globalAlpha=1}
