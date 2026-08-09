@@ -5,7 +5,7 @@ const shell=document.getElementById('shell'),overlay=document.getElementById('ov
 const startBtn=document.getElementById('startBtn'),installBtn=document.getElementById('installBtn');
 const hpText=document.getElementById('hpText'),hpFill=document.getElementById('hpFill'),metersEl=document.getElementById('meters');
 const comboN=document.getElementById('comboN'),comboT=document.getElementById('comboT'),toast=document.getElementById('toast'),hint=document.getElementById('hint'),bestText=document.getElementById('bestText'),soundStatus=document.getElementById('soundStatus');
-let W=390,H=844,dpr=1,groundY=680,raf=0,last=0,state='menu',deferredPrompt=null;
+let W=960,H=540,dpr=1,groundY=370,physicsScale=1,raf=0,last=0,state='menu',deferredPrompt=null;
 let audio=null,master=null,noiseBuffer=null;
 let keyStepTimer=0,keyStepSide=0,keyFlash=0;
 const G=1700, JUMP=-690;
@@ -19,7 +19,7 @@ best=Number(localStorage.getItem('tactileBest')||0); bestText.textContent=`BEST 
 
 function resize(){
   const r=shell.getBoundingClientRect();W=r.width;H=r.height;dpr=Math.min(2,devicePixelRatio||1);
-  canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);groundY=H*.79;
+  canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);groundY=H*.69;physicsScale=Math.max(.62,Math.min(1.05,H/620));
 }
 addEventListener('resize',resize);resize();
 
@@ -58,7 +58,7 @@ function playBlueSwitch(accent=false){
 }
 
 function reset(){
- player={x:W*.23,y:groundY-56,w:42,h:56,vy:0,onGround:true,rot:0,squash:0};objects=[];particles=[];distance=0;hp=100;combo=0;spawnX=W+100;speed=Math.max(220,W*.58);runTime=0;shake=0;flash=0;keyStepTimer=.05;keyStepSide=0;keyFlash=0;
+ player={x:W*.16,y:groundY-56,w:42,h:56,vy:0,onGround:true,rot:0,squash:0};objects=[];particles=[];distance=0;hp=100;combo=0;spawnX=W+100;speed=Math.max(220,Math.min(315,H*.60));runTime=0;shake=0;flash=0;keyStepTimer=.05;keyStepSide=0;keyFlash=0;
  for(let i=0;i<6;i++)spawnObject(i<2?W+160+i*180:undefined);
  updateHud();
 }
@@ -70,7 +70,7 @@ function spawnObject(xOverride){
 }
 function doJump(){
  if(state!=='playing')return;initAudio(); if(audio.state==='suspended')audio.resume();
- if(player.onGround){player.vy=JUMP;player.onGround=false;player.squash=-.15;jumpSound();hint.style.opacity=.15; if(navigator.vibrate)navigator.vibrate(8)}
+ if(player.onGround){player.vy=JUMP*physicsScale;player.onGround=false;player.squash=-.15;jumpSound();hint.style.opacity=.15; if(navigator.vibrate)navigator.vibrate(8)}
 }
 function burst(o,perfect){
  if(o.burst)return;o.burst=true;o.hit=true;o.compress=1;combo=perfect?combo+1:Math.max(1,combo);hp=Math.min(100,hp+(perfect?5:2));shake=perfect?8:4;flash=perfect?.22:.08;playSound(TYPES[o.type].sound,perfect);
@@ -86,7 +86,7 @@ function gameOver(){
 }
 function step(dt){
  if(state!=='playing')return;runTime+=dt;distance+=speed*dt*.035;speed=Math.min(330,speed+dt*2.2);hp-=dt*(2.5+speed/280); if(hp<=0){hp=0;updateHud();gameOver();return}
- player.vy+=G*dt;player.y+=player.vy*dt;player.rot+=(player.onGround?0:(player.vy>0?1.8:-1.2))*dt;
+ player.vy+=G*physicsScale*dt;player.y+=player.vy*dt;player.rot+=(player.onGround?0:(player.vy>0?1.8:-1.2))*dt;
  const wasGrounded=player.onGround;
  if(player.y+player.h>=groundY){
    player.y=groundY-player.h;player.vy=0;player.onGround=true;player.rot*=.6;
