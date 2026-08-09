@@ -11,7 +11,7 @@ let W=960,H=540,dpr=1,groundY=370,physicsScale=1,last=0,state='menu',deferredPro
 let audio=null,master=null,noiseBuffer=null,audioReady=false,audioLoadPromise=null;
 let keyboardTravel=0,lastSteppedKey=null,hudClock=0;
 let objectSprites={},hazardSprites={},renderSeed=0,skyGradient=null,abyssGradient=null;
-let platforms=[],hazards=[],nextX=0,platformSeq=0,hazardSeq=0,sectionSeq=0,jumpBufferUntil=0,coyoteUntil=0,lastSupportId=null;
+let platforms=[],hazards=[],nextX=0,platformSeq=0,hazardSeq=0,sectionSeq=0,materialSeq=0,jumpBufferUntil=0,coyoteUntil=0,lastSupportId=null,lastMaterialStepKey=null;
 
 const SAMPLE_FILES={
  keyboard:['./KEY_1.wav','./KEY_2.wav','./KEY_3.wav','./KEY_4.wav','./KEY_5.wav'],
@@ -71,7 +71,7 @@ const SPRITE_FILES={
 const sprites={run:[],jump:[],slide:[],crouch:[]};
 for(const [action,files] of Object.entries(SPRITE_FILES))for(const src of files){const im=new Image();im.decoding='async';im.src=src;sprites[action].push(im)}
 
-const G=2250,JUMP=-790,OBJECT_BOUNCE=-510,COYOTE=.115,JUMP_BUFFER=.145,TYPE_KEYS=['jelly','wax','bubble'];
+const G=2250,JUMP=-790,COYOTE=.115,JUMP_BUFFER=.145,TYPE_KEYS=['jelly','wax','bubble'];
 const TYPES={
  jelly:{label:'말랑',base:'#8b54cf'},
  wax:{label:'왁스',base:'#dd812b'},
@@ -170,7 +170,12 @@ function resize(){
  abyssGradient=ctx.createLinearGradient(0,groundY,0,H);abyssGradient.addColorStop(0,'rgba(35,50,60,.10)');abyssGradient.addColorStop(.35,'rgba(28,38,46,.32)');abyssGradient.addColorStop(1,'rgba(9,14,19,.88)');
  buildObjectSprites();buildHazardSprites();
  for(const p of platforms)buildPlatformSprite(p);
- if(player&&player.onGround&&lastSupportId){const p=platforms.find(x=>x.id===lastSupportId);if(p)player.y=p.y-player.h}
+ for(const o of objects){if(o.kind==='land')o.y=groundY-o.lift-o.h}
+ if(player&&player.onGround&&lastSupportId){
+  const p=platforms.find(x=>x.id===lastSupportId);
+  const o=objects.find(x=>x.kind==='land'&&x.id===lastSupportId);
+  if(p)player.y=p.y-player.h;else if(o)player.y=o.y-player.h;
+ }
 }
 function syncViewport(){
  const vv=window.visualViewport;
@@ -201,14 +206,70 @@ function addKeyboardPlatform(x,keyCount){
  const {keyW,gap,stride}=keyboardMetrics(),w=Math.max(stride*keyCount-gap,keyW),p={id:'k'+(++platformSeq),x,y:groundY,w,keyCount,seed:(platformSeq*7)%KEY_LABELS.length,img:null,visualH:140,pressedIndex:-1,pressedTimer:0};
  buildPlatformSprite(p);platforms.push(p);return p;
 }
-function addAirObject(x,type,lift=82){
- const w=type==='bubble'?82:68+(Math.random()*12),h=type==='jelly'?38:type==='wax'?31:29;
- const o={x,y:groundY-lift,w,h,type,hit:false,burst:false,compress:0,air:true};objects.push(o);return o;
+function addMaterialLand(x,type,lift=74,width=null){
+ const baseW=width||Math.max(245,Math.min(365,W*.31));
+ const h=type==='jelly'?50:type==='wax'?43:39;
+ const stepSpan=type==='bubble'?42:type==='wax'?55:52;
+ const count=Math.max(4,Math.ceil(baseW/stepSpan));
+ const o={
+  id:'m'+(++materialSeq),kind:'land',x,y:groundY-lift-h,w:baseW,h,type,lift,
+  stepSpan,lastStep:-1,stepCount:0,squish:0,squishX:.5,
+  bubbleCells:type==='bubble'?Array.from({length:Math.max(7,Math.ceil(baseW/34))},()=>false):null,
+  waxMarks:type==='wax'?Array.from({length:count},()=>0):null
+ };
+ objects.push(o);return o;
+}
+function triggerMaterialStep(o,accent=false){
+ if(!o||o.kind!=='land')return;
+ const footX=player.x+player.w*.50,local=Math.max(0,Math.min(o.w-1,footX-o.x));
+ const idx=Math.max(0,Math.floor(local/o.stepSpan));
+ const stepKey=o.id+':'+idx;
+ if(stepKey===lastMaterialStepKey)return;
+ lastMaterialStepKey=stepKey;o.lastStep=idx;o.stepCount++;
+ if(o.type==='bubble'){
+  const bi=Math.max(0,Math.min(o.bubbleCells.length-1,Math.floor(local/o.w*o.bubbleCells.length)));
+  o.bubbleCells[bi]=true;
+  // 발 폭만큼 옆 에어캡 하나가 같이 눌릴 때도 있음. 비닐 바닥은 그대로 남는다.
+  if(bi+1<o.bubbleCells.length&&o.stepCount%3===0)o.bubbleCells[bi+1]=true;
+  playRecordedSample('bubble',accent?.98:.88);
+  if(navigator.vibrate)navigator.vibrate(5);
+ }else if(o.type==='wax'){
+  const levels=[1,.72,.50,.34,.22,.16];
+  const vol=levels[Math.min(levels.length-1,o.stepCount-1)]*(accent?1:.94);
+  if(o.waxMarks) o.waxMarks[Math.min(o.waxMarks.length-1,idx)]=Math.min(3,(o.waxMarks[Math.min(o.waxMarks.length-1,idx)]||0)+1);
+  playRecordedSample('wax',vol);
+  shake=Math.max(shake,o.stepCount===1?4.2:1.7);
+  if(o.stepCount===1)flash=Math.max(flash,.055);
+  if(navigator.vibrate)navigator.vibrate(o.stepCount===1?9:4);
+  // 왁스 조각은 사라지지 않고 부서진 상태로 남는다.
+  const cx=footX,cy=o.y+8,count=o.stepCount===1?5:2;
+  for(let i=0;i<count&&particles.length<48;i++)particles.push({x:cx+(Math.random()-.5)*24,y:cy,vx:(Math.random()-.5)*75,vy:-25-Math.random()*55,r:1.5+Math.random()*2.2,life:.22+Math.random()*.14,color:'#c8762b'});
+ }else{
+  o.squish=1;o.squishX=local/o.w;
+  playRecordedSample('jelly',accent?.88:.74);
+  if(navigator.vibrate)navigator.vibrate(5);
+ }
+}
+function addMaterialChain(){
+ const count=2+((Math.random()*2)|0);
+ let lastLift=64+Math.random()*18;
+ nextX+=Math.max(72,Math.min(118,W*.09));
+ const order=[...TYPE_KEYS].sort(()=>Math.random()-.5);
+ for(let i=0;i<count;i++){
+  const type=order[i%order.length];
+  const lift=Math.max(52,Math.min(118,lastLift+(Math.random()-.5)*34));
+  const width=Math.max(245,Math.min(370,W*(.28+Math.random()*.07)));
+  const o=addMaterialLand(nextX,type,lift,width);
+  nextX=o.x+o.w;
+  // 직접 점프해서 다음 재질 땅으로 넘어가는 간격. 자동 반동은 없다.
+  nextX+=Math.max(72,Math.min(118,74+Math.random()*38));
+  lastLift=lift;
+ }
+ const p=addKeyboardPlatform(nextX,5+((Math.random()*4)|0));nextX=p.x+p.w;
 }
 function maybeAddGroundTarget(p){
- if(Math.random()>.38||p.w<230)return;
- const type=TYPE_KEYS[(Math.random()*TYPE_KEYS.length)|0],w=type==='bubble'?82:66+Math.random()*12,h=type==='jelly'?38:type==='wax'?31:29;
- const x=p.x+p.w*(.56+Math.random()*.20);objects.push({x,y:p.y-h,w,h,type,hit:false,burst:false,compress:0,air:false});
+ // v13부터 작은 1회성 오브젝트 대신 긴 재질 땅을 사용한다.
+ return p;
 }
 function addHazard(p,type){
  const margin=Math.max(54,Math.min(92,p.w*.12));
@@ -229,25 +290,16 @@ function generateActionSection(type){
 }
 function generateSection(){
  const {stride}=keyboardMetrics();sectionSeq++;
- const pattern=sectionSeq%6;
- const airBridge=pattern===3||pattern===0;
- if(airBridge){
-  const count=3+((Math.random()*2)|0),step=Math.max(86,Math.min(112,W*.105)),lead=Math.max(62,Math.min(105,W*.08));
-  nextX+=lead;
-  for(let i=0;i<count;i++){
-   const type=TYPE_KEYS[(Math.random()*TYPE_KEYS.length)|0];
-   const lift=72+(i%2)*16+Math.random()*8;
-   addAirObject(nextX+i*step,type,lift);
-  }
-  nextX+=count*step+Math.max(55,W*.045);
-  const p=addKeyboardPlatform(nextX,4+((Math.random()*4)|0));nextX=p.x+p.w;maybeAddGroundTarget(p);
+ const pattern=sectionSeq%7;
+ if(pattern===0||pattern===3){
+  addMaterialChain();
  }else if(pattern===2){
   generateActionSection('slide');
  }else if(pattern===5){
   generateActionSection('crouch');
  }else{
-  nextX+=Math.max(72,Math.min(145,74+Math.random()*80));
-  const p=addKeyboardPlatform(nextX,4+((Math.random()*5)|0));nextX=p.x+p.w;maybeAddGroundTarget(p);
+  nextX+=Math.max(70,Math.min(138,72+Math.random()*72));
+  const p=addKeyboardPlatform(nextX,5+((Math.random()*5)|0));nextX=p.x+p.w;
  }
 }
 function platformUnderFoot(){
@@ -263,7 +315,7 @@ function triggerKeyboardContact(p,accent=false){
 }
 function setAction(action){if(!player||player.action===action)return;player.action=action;player.actionTime=0}
 function reset(){
- platforms=[];hazards=[];objects=[];particles=[];distance=0;hp=100;combo=0;speed=Math.max(235,Math.min(320,H*.64));runTime=0;shake=0;flash=0;keyboardTravel=0;lastSteppedKey=null;hudClock=0;platformSeq=0;hazardSeq=0;sectionSeq=0;jumpBufferUntil=0;coyoteUntil=0;lastSupportId=null;
+ platforms=[];hazards=[];objects=[];particles=[];distance=0;hp=100;combo=0;speed=Math.max(235,Math.min(320,H*.64));runTime=0;shake=0;flash=0;keyboardTravel=0;lastSteppedKey=null;lastMaterialStepKey=null;hudClock=0;platformSeq=0;hazardSeq=0;sectionSeq=0;materialSeq=0;jumpBufferUntil=0;coyoteUntil=0;lastSupportId=null;
  const {stride}=keyboardMetrics(),startKeys=Math.max(7,Math.ceil((W*.72+150)/stride));
  const first=addKeyboardPlatform(-120,startKeys);nextX=first.x+first.w;
  player={x:W*.16,y:first.y-68,w:58,h:68,vy:0,onGround:true,action:'run',actionTime:0,slideTimer:0,crouchHeld:false,invuln:0};lastSupportId=first.id;coyoteUntil=performance.now()/1000+COYOTE;triggerKeyboardContact(first,true);
@@ -271,7 +323,7 @@ function reset(){
 }
 async function wakeAudio(){await initAudio()}
 function executeJump(){
- player.slideTimer=0;player.crouchHeld=false;player.vy=JUMP*physicsScale;player.onGround=false;lastSupportId=null;lastSteppedKey=null;jumpBufferUntil=0;coyoteUntil=0;setAction('jump');jumpSound();hint.style.opacity=.15;if(navigator.vibrate)navigator.vibrate(7);
+ player.slideTimer=0;player.crouchHeld=false;player.vy=JUMP*physicsScale;player.onGround=false;lastSupportId=null;lastSteppedKey=null;lastMaterialStepKey=null;jumpBufferUntil=0;coyoteUntil=0;setAction('jump');jumpSound();hint.style.opacity=.15;if(navigator.vibrate)navigator.vibrate(7);
 }
 function doJump(){
  if(state!=='playing'||!player)return;void wakeAudio();const now=performance.now()/1000;jumpBufferUntil=now+JUMP_BUFFER;
@@ -281,11 +333,8 @@ function doSlide(){if(state!=='playing'||!player.onGround)return;void wakeAudio(
 function startCrouch(){if(state!=='playing')return;void wakeAudio();player.crouchHeld=true;player.slideTimer=0;if(player.onGround)setAction('crouch')}
 function stopCrouch(){if(!player)return;player.crouchHeld=false;if(state==='playing'&&player.onGround&&player.slideTimer<=0)setAction('run')}
 function burst(o,perfect){
- if(o.burst)return;o.burst=true;o.hit=true;o.compress=1;combo=perfect?combo+1:Math.max(1,combo);hp=Math.min(100,hp+(perfect?5:2));shake=perfect?7:3.5;flash=perfect?.18:.07;
- if(o.type==='wax')playRecordedSample('wax',perfect?.95:.84);else if(o.type==='jelly')playRecordedSample('jelly',perfect?.92:.80);else playRecordedSample('bubble',perfect?.92:.82);
- if(navigator.vibrate)navigator.vibrate(perfect?[12,15,18]:9);
- const cx=o.x+o.w/2,cy=o.y+o.h/2,count=perfect?10:6;for(let i=0;i<count&&particles.length<52;i++){const a=Math.random()*Math.PI*2,s=70+Math.random()*210;particles.push({x:cx,y:cy,vx:Math.cos(a)*s,vy:Math.sin(a)*s-90,r:2+Math.random()*5,life:.32+Math.random()*.28,color:TYPES[o.type].base})}
- showToast(perfect?'PERFECT!':TYPES[o.type].label+'!');updateHud(true);
+ // v13: 재질 땅은 사라지지 않는다. 호환용으로 접촉 반응만 호출한다.
+ triggerMaterialStep(o,perfect);
 }
 function showToast(text){toast.textContent=text;toast.classList.remove('show');void toast.offsetWidth;toast.classList.add('show')}
 function playerBody(){
@@ -335,36 +384,42 @@ function step(dt){
  player.actionTime+=dt;if(player.slideTimer>0)player.slideTimer=Math.max(0,player.slideTimer-dt);if(player.invuln>0)player.invuln=Math.max(0,player.invuln-dt);
  for(const p of platforms){p.x-=dx;if(p.pressedTimer>0)p.pressedTimer=Math.max(0,p.pressedTimer-dt)}
  for(const h of hazards)h.x-=dx;
- for(const o of objects){o.x-=dx;if(o.compress>0)o.compress=Math.max(0,o.compress-dt*2.8)}
- nextX-=dx;
- keyboardTravel+=dx;
+ for(const o of objects){
+  o.x-=dx;
+  if(o.kind==='land'&&o.type==='jelly'&&o.squish>0)o.squish=Math.max(0,o.squish-dt*.72); // 약 1.4초에 천천히 복원
+ }
+ nextX-=dx;keyboardTravel+=dx;
 
  const prevBottom=player.y+player.h,wasGrounded=player.onGround,prevSupport=lastSupportId;
  player.vy+=G*physicsScale*dt;player.y+=player.vy*dt;player.onGround=false;lastSupportId=null;
- let landedOnObject=false;
+ let landed=false;
  if(player.vy>=0){
   const px1=player.x+8,px2=player.x+player.w-8,newBottom=player.y+player.h;
+  // 재질 땅: 착지해도 자동으로 튀지 않는다. 일반 바닥처럼 서서 직접 다음 점프를 입력한다.
   for(let i=0;i<objects.length;i++){
-   const o=objects[i];if(o.burst)continue;
-   if(px2>o.x&&px1<o.x+o.w&&prevBottom<=o.y+10&&newBottom>=o.y){
-    player.y=o.y-player.h+3;player.vy=OBJECT_BOUNCE*physicsScale;player.onGround=false;lastSteppedKey=null;setAction('jump');
-    const pc=player.x+player.w/2,oc=o.x+o.w/2;burst(o,Math.abs(pc-oc)<o.w*.23);landedOnObject=true;break;
+   const o=objects[i];if(o.kind!=='land')continue;
+   if(px2>o.x+3&&px1<o.x+o.w-3&&prevBottom<=o.y+10&&newBottom>=o.y){
+    player.y=o.y-player.h;player.vy=0;player.onGround=true;lastSupportId=o.id;coyoteUntil=now+COYOTE;
+    if(player.slideTimer>0)setAction('slide');else if(player.crouchHeld)setAction('crouch');else setAction('run');
+    lastSteppedKey=null;
+    triggerMaterialStep(o,!wasGrounded||prevSupport!==o.id);
+    landed=true;break;
    }
   }
-  if(!landedOnObject){
+  if(!landed){
    for(let i=0;i<platforms.length;i++){
     const p=platforms[i];if(px2<=p.x+4||px1>=p.x+p.w-4)continue;
     if(prevBottom<=p.y+9&&newBottom>=p.y){
      player.y=p.y-player.h;player.vy=0;player.onGround=true;lastSupportId=p.id;coyoteUntil=now+COYOTE;
      if(player.slideTimer>0)setAction('slide');else if(player.crouchHeld)setAction('crouch');else setAction('run');
-     triggerKeyboardContact(p,!wasGrounded||prevSupport!==p.id);break;
+     lastMaterialStepKey=null;triggerKeyboardContact(p,!wasGrounded||prevSupport!==p.id);landed=true;break;
     }
    }
   }
  }
- if(!player.onGround&&!landedOnObject){
+ if(!player.onGround){
   setAction('jump');
-  if(wasGrounded){coyoteUntil=now+COYOTE;lastSteppedKey=null}
+  if(wasGrounded){coyoteUntil=now+COYOTE;lastSteppedKey=null;lastMaterialStepKey=null}
  }
  if(player.onGround&&jumpBufferUntil>=now)executeJump();
  else if(jumpBufferUntil&&jumpBufferUntil<now)jumpBufferUntil=0;
@@ -372,7 +427,7 @@ function step(dt){
 
  let pw=0;for(let i=0;i<platforms.length;i++)if(platforms[i].x+platforms[i].w>-180)platforms[pw++]=platforms[i];platforms.length=pw;
  let hw=0;for(let i=0;i<hazards.length;i++)if(hazards[i].x+hazards[i].w>-190)hazards[hw++]=hazards[i];hazards.length=hw;
- let ow=0;for(let i=0;i<objects.length;i++)if(objects[i].x+objects[i].w>-160)objects[ow++]=objects[i];objects.length=ow;
+ let ow=0;for(let i=0;i<objects.length;i++)if(objects[i].x+objects[i].w>-220)objects[ow++]=objects[i];objects.length=ow;
  let qw=0;for(let i=0;i<particles.length;i++){const p=particles[i];p.life-=dt;if(p.life>0){p.vy+=620*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;particles[qw++]=p}}particles.length=qw;
  while(nextX<W+1100)generateSection();
  if(player.y>H+70){gameOver('fall');return}
@@ -415,8 +470,45 @@ function drawHazards(){
  }
 }
 function drawObject(o){
- const img=objectSprites[o.type];if(!img)return;const comp=o.burst?Math.max(.08,o.compress):1-o.compress*.55;
- ctx.save();ctx.translate(o.x+o.w/2,o.y+o.h);ctx.scale(1+(1-comp)*.32,comp);ctx.globalAlpha=o.burst?Math.max(.38,comp):1;ctx.drawImage(img,-o.w/2,-o.h,o.w,o.h);ctx.restore();
+ if(o.kind!=='land')return;
+ ctx.save();
+ const x=o.x,y=o.y,w=o.w,h=o.h;
+ if(o.type==='bubble'){
+  // 실제 에어캡: 공기방울만 꺼지고 아래 비닐 시트는 계속 남는다.
+  ctx.fillStyle='rgba(198,237,249,.52)';rr(ctx,x,y+7,w,h-2,9);ctx.fill();
+  ctx.strokeStyle='rgba(77,152,181,.42)';ctx.lineWidth=1;rr(ctx,x,y+7,w,h-2,9);ctx.stroke();
+  const cells=o.bubbleCells||[],cellW=w/cells.length;
+  for(let i=0;i<cells.length;i++){
+   const cx=x+cellW*(i+.5),cy=y+11+(i%2)*2,r=Math.min(13,cellW*.34);
+   if(cells[i]){
+    ctx.strokeStyle='rgba(77,146,171,.38)';ctx.lineWidth=1.1;ctx.beginPath();ctx.ellipse(cx,cy+5,r*.86,r*.22,0,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.18)';ctx.fillRect(cx-r*.65,cy+4,r*1.3,1);
+   }else{
+    const grad=ctx.createRadialGradient(cx-r*.28,cy-r*.35,1,cx,cy,r);grad.addColorStop(0,'rgba(255,255,255,.94)');grad.addColorStop(.42,'rgba(208,244,253,.88)');grad.addColorStop(1,'rgba(89,180,213,.72)');ctx.fillStyle=grad;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();ctx.strokeStyle='rgba(48,137,170,.48)';ctx.stroke();
+   }
+  }
+ }else if(o.type==='wax'){
+  // 왁스는 부서져도 점토/파편이 바닥에 그대로 남는다.
+  const grad=ctx.createLinearGradient(x,y,x,y+h);grad.addColorStop(0,'#ffc870');grad.addColorStop(.46,'#e89538');grad.addColorStop(1,'#aa571c');ctx.fillStyle=grad;rr(ctx,x,y,w,h,11);ctx.fill();
+  ctx.strokeStyle='rgba(126,62,17,.44)';rr(ctx,x,y,w,h,11);ctx.stroke();
+  const marks=o.waxMarks||[],seg=w/Math.max(1,marks.length);
+  for(let i=0;i<marks.length;i++)if(marks[i]>0){
+   const sx=x+seg*i,level=marks[i];
+   ctx.fillStyle=`rgba(126,65,25,${.10+.06*level})`;ctx.beginPath();ctx.moveTo(sx+seg*.08,y+h*.22);ctx.lineTo(sx+seg*.48,y+h*.08);ctx.lineTo(sx+seg*.92,y+h*.31);ctx.lineTo(sx+seg*.72,y+h*.76);ctx.lineTo(sx+seg*.23,y+h*.83);ctx.closePath();ctx.fill();
+   ctx.strokeStyle=`rgba(91,45,16,${.36+.10*level})`;ctx.lineWidth=1+level*.35;ctx.beginPath();ctx.moveTo(sx+seg*.22,y+4);ctx.lineTo(sx+seg*.48,y+h*.46);ctx.lineTo(sx+seg*.31,y+h*.92);ctx.moveTo(sx+seg*.48,y+h*.46);ctx.lineTo(sx+seg*.82,y+h*.18);ctx.stroke();
+   // 부서진 작은 왁스 점토 조각
+   ctx.fillStyle='#c66d26';for(let k=0;k<level+1;k++){const px=sx+seg*(.18+.23*k),py=y+h-3-(k%2)*3;ctx.beginPath();ctx.ellipse(px,py,4+level,2.5+level*.5,.2*k,0,Math.PI*2);ctx.fill()}
+  }
+  ctx.fillStyle='rgba(255,245,214,.44)';ctx.beginPath();ctx.ellipse(x+w*.27,y+8,w*.16,4,-.08,0,Math.PI*2);ctx.fill();
+ }else{
+  // 말랑이는 눌렸다가 천천히 원래 두께로 복원한다.
+  const squash=Math.max(0,Math.min(1,o.squish||0)),sy=1-squash*.42,extra=(1-sy)*.22;
+  const cx=x+w*(o.squishX||.5);ctx.translate(cx,y+h);ctx.scale(1+extra,sy);ctx.translate(-cx,-(y+h));
+  const grad=ctx.createLinearGradient(x,y,x+w,y+h);grad.addColorStop(0,'#d4acf5');grad.addColorStop(.48,'#a66bd8');grad.addColorStop(1,'#7542ad');ctx.fillStyle=grad;rr(ctx,x,y,w,h,17);ctx.fill();
+  ctx.strokeStyle='rgba(75,31,106,.38)';rr(ctx,x,y,w,h,17);ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.55)';rr(ctx,x+14,y+5,w*.42,8,6);ctx.fill();
+ }
+ ctx.restore();
 }
 function currentSprite(){let action=player.onGround?player.action:'jump',idx=0;if(action==='run')idx=Math.floor(player.actionTime/.095)%4;else if(action==='jump')idx=player.vy<35?0:1;else if(action==='slide')idx=Math.floor(player.actionTime/.12)%2;else if(action==='crouch')idx=player.actionTime<.13?0:1;return {action,img:sprites[action][idx]}}
 function drawPlayer(){
@@ -471,6 +563,6 @@ if(openChromeBtn)openChromeBtn.addEventListener('click',e=>{
  }else setInstallHelp('카카오톡 메뉴에서 “다른 브라우저로 열기”를 선택한 뒤 설치해줘.',true);
 });
 addEventListener('appinstalled',()=>{if(installBtn)installBtn.style.display='none';if(openChromeBtn)openChromeBtn.style.display='none';setInstallHelp('✅ 설치 완료! 홈 화면에서 촉감런을 실행할 수 있어.',true)});
-if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=12-action-obstacles').catch(()=>{}));
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=13-material-lands').catch(()=>{}));
 reset();state='menu';loop(performance.now());
 })();

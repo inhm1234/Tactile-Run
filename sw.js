@@ -1,6 +1,6 @@
-const CACHE='tactile-run-v12-action-obstacles';
+const CACHE='tactile-run-v13-material-lands';
 const ASSETS=[
- './','./index.html','./game.js?v=12-action-obstacles','./manifest.webmanifest?v=12','./icons/icon-192.png','./icons/icon-512.png',
+ './','./index.html','./game.js?v=13-material-lands','./manifest.webmanifest?v=13','./icons/icon-192.png','./icons/icon-512.png',
  './KEY_1.wav','./KEY_2.wav','./KEY_3.wav','./KEY_4.wav','./KEY_5.wav',
  './wax1.wav','./wax2.wav','./wax3.wav','./wax4.wav','./wax5.wav',
  './malrang1.wav','./malrang2.wav','./malrang3.wav',
