@@ -9,6 +9,7 @@ const moveLeftBtn=document.getElementById('moveLeftBtn'),moveRightBtn=document.g
 
 let W=960,H=540,dpr=1,groundY=370,physicsScale=1,last=0,state='menu',deferredPrompt=null;
 let audio=null,master=null,noiseBuffer=null,audioReady=false,audioLoadPromise=null;
+const activeAudioVoices=new Set();
 let keyboardTravel=0,lastSteppedKey=null,hudClock=0;
 let objectSprites={},hazardSprites={},renderSeed=0,skyGradient=null,abyssGradient=null;
 let platforms=[],hazards=[],nextX=0,platformSeq=0,hazardSeq=0,sectionSeq=0,materialSeq=0,jumpBufferUntil=0,coyoteUntil=0,lastSupportId=null,lastMaterialStepKey=null,slideHeld=false;
@@ -57,7 +58,14 @@ async function initAudio(){
 function playRecordedSample(kind,volume=1){
  if(!audio||!audioReady)return;
  const idx=randomSampleIndex(kind),buffer=audioBuffers[kind][idx];if(!buffer)return;
- const src=audio.createBufferSource(),gain=audio.createGain();gain.gain.value=Math.max(0,Math.min(1,volume));src.buffer=buffer;src.connect(gain);gain.connect(master);src.start();
+ // 새 효과음이 시작되어도 이전 효과음을 절대 끊지 않는다.
+ // 재생 중인 source를 명시적으로 보관하고 각 샘플이 자연스럽게 끝날 때만 해제한다.
+ const src=audio.createBufferSource(),gain=audio.createGain();
+ gain.gain.setValueAtTime(Math.max(0,Math.min(1,volume)),audio.currentTime);
+ src.buffer=buffer;src.connect(gain);gain.connect(master);
+ activeAudioVoices.add(src);
+ src.onended=()=>{activeAudioVoices.delete(src);try{src.disconnect()}catch(_){}try{gain.disconnect()}catch(_){}};
+ src.start(audio.currentTime);
 }
 function envGain(t0,attack,decay,peak=.8){const g=audio.createGain();g.gain.setValueAtTime(.0001,t0);g.gain.linearRampToValueAtTime(peak,t0+attack);g.gain.exponentialRampToValueAtTime(.001,t0+attack+decay);g.connect(master);return g}
 function jumpSound(){if(!audio)return;const t=audio.currentTime,o=audio.createOscillator(),g=envGain(t,.002,.07,.10);o.frequency.setValueAtTime(120,t);o.frequency.exponentialRampToValueAtTime(205,t+.07);o.connect(g);o.start(t);o.stop(t+.08)}
@@ -211,14 +219,15 @@ function addKeyboardPlatform(x,keyCount){
  buildPlatformSprite(p);platforms.push(p);return p;
 }
 function addMaterialLand(x,type,lift=42,width=null){
- const baseW=width||Math.max(245,Math.min(365,W*.31));
- const h=type==='jelly'?50:type==='wax'?43:39;
+ // 말랑이는 '긴 땅'이 아니라 한 번 눌렀다가 천천히 복원되는 1칸짜리 패드만 사용한다.
+ const baseW=type==='jelly'?Math.max(92,Math.min(112,width||104)):(width||Math.max(245,Math.min(365,W*.31)));
+ const h=type==='jelly'?52:type==='wax'?43:39;
  // 모바일에서도 키보드 바닥에서 한 번의 점프로 확실히 올라갈 수 있도록
  // '발판 윗면 높이'를 점프 최대높이의 72% 이내로 제한한다.
  const maxLift=Math.max(10,maxSafeRise()-h);
  lift=Math.max(6,Math.min(lift,maxLift));
- const stepSpan=type==='bubble'?42:type==='wax'?55:52;
- const count=Math.max(4,Math.ceil(baseW/stepSpan));
+ const stepSpan=type==='bubble'?34:type==='wax'?55:baseW+1;
+ const count=type==='jelly'?1:Math.max(4,Math.ceil(baseW/stepSpan));
  const o={
   id:'m'+(++materialSeq),kind:'land',x,y:groundY-lift-h,w:baseW,h,type,lift,
   stepSpan,lastStep:-1,stepCount:0,squish:0,squishX:.5,
@@ -230,33 +239,48 @@ function addMaterialLand(x,type,lift=42,width=null){
 function triggerMaterialStep(o,accent=false){
  if(!o||o.kind!=='land')return;
  const footX=player.x+player.w*.50,local=Math.max(0,Math.min(o.w-1,footX-o.x));
- const idx=Math.max(0,Math.floor(local/o.stepSpan));
- const stepKey=o.id+':'+idx;
- if(stepKey===lastMaterialStepKey)return;
- lastMaterialStepKey=stepKey;o.lastStep=idx;o.stepCount++;
+
  if(o.type==='bubble'){
+  // 뽁뽁이는 공기방울 하나가 곧 한 번의 팝이다.
+  // 이미 터진 방울을 다시 밟으면 비닐만 남아 있으므로 소리가 나지 않는다.
   const bi=Math.max(0,Math.min(o.bubbleCells.length-1,Math.floor(local/o.w*o.bubbleCells.length)));
-  o.bubbleCells[bi]=true;
-  // 발 폭만큼 옆 에어캡 하나가 같이 눌릴 때도 있음. 비닐 바닥은 그대로 남는다.
-  if(bi+1<o.bubbleCells.length&&o.stepCount%3===0)o.bubbleCells[bi+1]=true;
+  const stepKey=o.id+':bubble:'+bi;
+  if(stepKey===lastMaterialStepKey)return;
+  lastMaterialStepKey=stepKey;
+  if(o.bubbleCells[bi])return;
+  o.bubbleCells[bi]=true;o.lastStep=bi;o.stepCount++;
   playRecordedSample('bubble',accent?.98:.88);
   if(navigator.vibrate)navigator.vibrate(5);
- }else if(o.type==='wax'){
+  return;
+ }
+
+ if(o.type==='wax'){
+  const idx=Math.max(0,Math.min(o.waxMarks.length-1,Math.floor(local/o.stepSpan)));
+  const stepKey=o.id+':wax:'+idx;
+  if(stepKey===lastMaterialStepKey)return;
+  lastMaterialStepKey=stepKey;
+  // 이미 부서진 왁스 조각은 다시 밟아도 소리를 내지 않는다.
+  if((o.waxMarks[idx]||0)>0)return;
+  o.waxMarks[idx]=1;o.lastStep=idx;o.stepCount++;
+  // 새 구간을 처음 부술 때만 소리가 나며, 앞으로 갈수록 점점 작아진다.
   const levels=[1,.72,.50,.34,.22,.16];
   const vol=levels[Math.min(levels.length-1,o.stepCount-1)]*(accent?1:.94);
-  if(o.waxMarks) o.waxMarks[Math.min(o.waxMarks.length-1,idx)]=Math.min(3,(o.waxMarks[Math.min(o.waxMarks.length-1,idx)]||0)+1);
   playRecordedSample('wax',vol);
   shake=Math.max(shake,o.stepCount===1?4.2:1.7);
   if(o.stepCount===1)flash=Math.max(flash,.055);
   if(navigator.vibrate)navigator.vibrate(o.stepCount===1?9:4);
-  // 왁스 조각은 사라지지 않고 부서진 상태로 남는다.
   const cx=footX,cy=o.y+8,count=o.stepCount===1?5:2;
   for(let i=0;i<count&&particles.length<48;i++)particles.push({x:cx+(Math.random()-.5)*24,y:cy,vx:(Math.random()-.5)*75,vy:-25-Math.random()*55,r:1.5+Math.random()*2.2,life:.22+Math.random()*.14,color:'#c8762b'});
- }else{
-  o.squish=1;o.squishX=local/o.w;
-  playRecordedSample('jelly',accent?.88:.74);
-  if(navigator.vibrate)navigator.vibrate(5);
+  return;
  }
+
+ // 말랑이는 파괴되지 않는다. 같은 1칸 패드를 다시 점프해 밟으면 다시 눌리고 소리도 다시 난다.
+ const stepKey=o.id+':jelly';
+ if(stepKey===lastMaterialStepKey)return;
+ lastMaterialStepKey=stepKey;o.lastStep=0;o.stepCount++;
+ o.squish=1;o.squishX=local/o.w;
+ playRecordedSample('jelly',accent?.88:.74);
+ if(navigator.vibrate)navigator.vibrate(5);
 }
 function addMaterialChain(){
  // v15부터 랜덤 체인은 사용하지 않는다. 고정 레벨은 buildFixedLevel()에서 설계한다.
@@ -291,8 +315,8 @@ function buildFixedLevel(){
  // 2) 첫 슬라이드 과제: 충분한 예고 구간 뒤 낮은 스위치 바
  gap(58); const s1=keyboard(13); addHazard(s1,'slide',.58);
 
- // 3) 높낮이가 섞인 말랑 → 뽁뽁 → 왁스 삼단 구간
- gap(92); material('jelly',360,34);
+ // 3) 1칸 말랑 패드 → 뽁뽁 → 왁스 삼단 구간
+ gap(92); material('jelly',104,34);
  gap(74); material('bubble',330,54);
  gap(68); material('wax',390,30);
  gap(84); keyboard(8);
@@ -304,16 +328,16 @@ function buildFixedLevel(){
  gap(88); material('bubble',540,16);
  gap(72); keyboard(6);
  gap(98); material('wax',315,42);
- gap(70); material('jelly',410,18);
+ gap(70); material('jelly',104,18);
 
  // 6) 복합 과제: 키보드 → 슬라이드 → 짧은 낭떠러지 → 재질 2종
  gap(82); const s2=keyboard(12); addHazard(s2,'slide',.46);
  gap(104); material('wax',355,24);
  gap(78); material('bubble',420,38);
 
- // 7) 마지막 웅크리기 + 피니시 런웨이
+ // 7) 마지막 웅크리기 + 1칸 말랑 패드 + 피니시 런웨이
  gap(78); const c2=keyboard(14); addHazard(c2,'crouch',.48);
- gap(74); material('jelly',440,22);
+ gap(74); material('jelly',104,22);
  gap(72); keyboard(17);
 
  levelGoal=Math.max(0,nextX-W*.68);
