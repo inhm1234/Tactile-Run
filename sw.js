@@ -1,6 +1,6 @@
-const CACHE='tactile-run-v7-object-real-audio';
+const CACHE='tactile-run-v8-optimized-realistic';
 const ASSETS=[
- './','./index.html','./game.js?v=7-object-real-audio','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png',
+ './','./index.html','./game.js?v=8-optimized-realistic','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png',
  './keyboard1.wav','./keyboard2.wav','./keyboard3.wav','./keyboard4.wav',
  './wax1.wav','./wax2.wav','./wax3.wav','./wax4.wav','./wax5.wav',
  './malrang1.wav','./malrang2.wav','./malrang3.wav',
