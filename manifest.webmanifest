@@ -2,7 +2,7 @@
   "id":"./",
   "name":"촉감런 ASMR Prototype",
   "short_name":"촉감런",
-  "description":"키보드 발판과 ASMR 오브젝트를 밟아 건너는 추락형 러너 프로토타입",
+  "description":"키보드 발판, 공중 ASMR 오브젝트, 슬라이드·웅크리기 장애물을 넘는 추락형 러너 프로토타입",
   "start_url":"./?source=pwa",
   "scope":"./",
   "display":"standalone",

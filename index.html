@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="촉감런" />
-  <link rel="manifest" href="manifest.webmanifest?v=11.1" />
+  <link rel="manifest" href="manifest.webmanifest?v=12" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>촉감런 - ASMR Prototype</title>
   <style>
@@ -43,6 +43,12 @@
     #hint{position:absolute;z-index:2;left:50%;bottom:max(8px,calc(env(safe-area-inset-bottom) + 5px));transform:translateX(-50%);padding:7px 12px;border-radius:999px;background:#242126df;color:white;font-size:10px;font-weight:900;pointer-events:none;box-shadow:0 8px 20px #1b13262b;transition:.25s opacity;white-space:nowrap}
     #soundStatus{position:absolute;z-index:2;right:max(10px,env(safe-area-inset-right));bottom:max(7px,calc(env(safe-area-inset-bottom) + 5px));font-size:9px;font-weight:900;opacity:.45;pointer-events:none}
 
+    #mobileControls{display:none;position:absolute;z-index:5;left:max(10px,env(safe-area-inset-left));bottom:max(10px,calc(env(safe-area-inset-bottom) + 6px));gap:8px;align-items:flex-end;pointer-events:auto}
+    #mobileControls button{width:82px;height:50px;padding:5px 8px;border-radius:15px;background:rgba(32,30,35,.80);color:#fff;border:1px solid rgba(255,255,255,.24);box-shadow:0 5px 0 rgba(9,8,10,.78),0 9px 20px rgba(0,0,0,.22);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center;gap:0;touch-action:none;user-select:none}
+    #mobileControls button b{font-size:17px;line-height:1}
+    #mobileControls button span{font-size:8px;letter-spacing:.08em}
+    #mobileControls button.active{transform:translateY(3px);background:rgba(62,57,70,.92);box-shadow:0 2px 0 rgba(9,8,10,.78)}
+
     #overlay{position:absolute;z-index:6;inset:0;display:grid;place-items:center;padding:max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));background:linear-gradient(#ffffff10,#fff7eaa8)}
     #card{width:min(92%,520px);max-height:100%;padding:15px 18px 13px;text-align:center;overflow:auto;touch-action:pan-y;overscroll-behavior:contain}
     .logo{height:58px;display:grid;place-items:center;margin-bottom:2px}.logo img{height:56px;width:auto;image-rendering:auto}
@@ -65,6 +71,8 @@
       #app{place-items:stretch}
       #shell{width:100%;height:100%;max-width:none;max-height:none;border-radius:0;box-shadow:none}
       #hud{left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right))}
+      #mobileControls{display:flex}
+      #hint{bottom:max(12px,calc(env(safe-area-inset-bottom) + 64px))}
     }
 
     /* 카카오톡/모바일 가로처럼 높이가 아주 작은 화면 */
@@ -73,7 +81,8 @@
       #hpBox{padding:5px 8px}.row{font-size:10px}#hpTrack{height:7px;margin-top:3px}#distanceBox{padding:5px 8px;min-width:68px}.small{font-size:7px}.big{font-size:16px}
       #controlsGuide{top:max(42px,calc(env(safe-area-inset-top) + 36px));padding:4px 7px;font-size:8px;gap:6px}#controlsGuide kbd{height:15px;min-width:17px;font-size:7px}
       #combo{top:64px}.comboN{font-size:20px}.comboT{font-size:7px}
-      #hint{bottom:max(4px,env(safe-area-inset-bottom));font-size:8px;padding:5px 9px}
+      #hint{bottom:max(4px,env(safe-area-inset-bottom));font-size:8px;padding:5px 9px;display:none}
+      #mobileControls{left:max(7px,env(safe-area-inset-left));bottom:max(6px,env(safe-area-inset-bottom));gap:6px}#mobileControls button{width:68px;height:42px;border-radius:12px}#mobileControls button b{font-size:14px}#mobileControls button span{font-size:7px}
       #soundStatus{display:none}
       #overlay{place-items:start center;padding-top:max(6px,env(safe-area-inset-top));padding-bottom:max(6px,env(safe-area-inset-bottom))}
       #card{width:min(96%,610px);padding:8px 12px 7px;border-radius:12px}
@@ -102,18 +111,22 @@
   </div>
   <div id="controlsGuide" class="glass" aria-label="키 조작 안내">
     <span><kbd>↑</kbd><kbd>SPACE</kbd> 점프</span>
-    <span><kbd>SHIFT</kbd> 슬라이딩</span>
-    <span><kbd>↓</kbd><kbd>S</kbd> 웅크리기</span><span>⚠️ 빈 곳 = 추락</span>
+    <span><kbd>SHIFT</kbd> 슬라이드 장애물</span>
+    <span><kbd>↓</kbd><kbd>S</kbd> 웅크리기 터널</span><span>⚠️ 빈 곳 = 추락</span>
   </div>
   <div id="combo"><div class="comboN" id="comboN"></div><div class="comboT" id="comboT"></div></div>
   <div id="toast">PERFECT!</div>
-  <div id="hint">화면 터치 = 즉시 점프 · 빈 곳에 떨어지면 게임오버</div>
+  <div id="hint">화면 터치 = 점프 · SHIFT = 슬라이드 · ↓ = 웅크리기 · 빈 곳 = 추락</div>
   <div id="soundStatus">🔊 실제 ASMR 샘플 ON</div>
+  <div id="mobileControls" aria-label="모바일 조작">
+    <button id="slideTouchBtn" type="button"><b>⇩</b><span>SLIDE</span></button>
+    <button id="crouchTouchBtn" type="button"><b>↓</b><span>HOLD</span></button>
+  </div>
   <div id="overlay">
     <div id="card" class="glass">
       <div class="logo"><img src="sprites/run1.png" alt="촉감런 캐릭터"></div>
       <div class="title">촉감런 ASMR PROTO</div>
-      <div class="sub">키보드 발판을 이어 달리고 공중의 <b>왁스·말랑이·뽁뽁이</b>를 밟아 건너가. 빈 곳에 떨어지면 즉시 게임오버!</div>
+      <div class="sub">키보드 발판과 공중 <b>왁스·말랑이·뽁뽁이</b>를 이어 달려. <b>SHIFT로 낮은 장애물을 슬라이드</b>하고 <b>↓를 눌러 긴 터널을 웅크려 통과</b>해. 빈 곳은 즉시 추락!</div>
       <div class="chips"><span class="chip">🟣 말랑</span><span class="chip">🟠 왁스</span><span class="chip">🔵 뽁뽁</span></div>
       <div id="actionRow">
         <button id="startBtn">탭해서 시작</button>
@@ -125,6 +138,6 @@
     </div>
   </div>
 </div></div>
-<script src="game.js?v=11.1-step-hotfix"></script>
+<script src="game.js?v=12-action-obstacles"></script>
 </body>
 </html>

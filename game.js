@@ -5,12 +5,13 @@ const shell=document.getElementById('shell'),overlay=document.getElementById('ov
 const startBtn=document.getElementById('startBtn'),installBtn=document.getElementById('installBtn'),openChromeBtn=document.getElementById('openChromeBtn'),installHelp=document.getElementById('installHelp');
 const hpText=document.getElementById('hpText'),hpFill=document.getElementById('hpFill'),metersEl=document.getElementById('meters');
 const comboN=document.getElementById('comboN'),comboT=document.getElementById('comboT'),toast=document.getElementById('toast'),hint=document.getElementById('hint'),bestText=document.getElementById('bestText'),soundStatus=document.getElementById('soundStatus');
+const slideTouchBtn=document.getElementById('slideTouchBtn'),crouchTouchBtn=document.getElementById('crouchTouchBtn');
 
 let W=960,H=540,dpr=1,groundY=370,physicsScale=1,last=0,state='menu',deferredPrompt=null;
 let audio=null,master=null,noiseBuffer=null,audioReady=false,audioLoadPromise=null;
 let keyboardTravel=0,lastSteppedKey=null,hudClock=0;
-let objectSprites={},renderSeed=0,skyGradient=null,abyssGradient=null;
-let platforms=[],nextX=0,platformSeq=0,sectionSeq=0,jumpBufferUntil=0,coyoteUntil=0,lastSupportId=null;
+let objectSprites={},hazardSprites={},renderSeed=0,skyGradient=null,abyssGradient=null;
+let platforms=[],hazards=[],nextX=0,platformSeq=0,hazardSeq=0,sectionSeq=0,jumpBufferUntil=0,coyoteUntil=0,lastSupportId=null;
 
 const SAMPLE_FILES={
  keyboard:['./KEY_1.wav','./KEY_2.wav','./KEY_3.wav','./KEY_4.wav','./KEY_5.wav'],
@@ -127,6 +128,38 @@ function buildObjectSprites(){
  });
 }
 
+
+function buildHazardSprites(){
+ const scale=2;
+ function create(w,h,draw){const c=makeCanvas(w*scale,h*scale),g=c.getContext('2d');g.scale(scale,scale);draw(g,w,h);return c}
+ hazardSprites.slide=create(180,92,(g,w,h)=>{
+  // 낮게 매달린 기계식 스위치 테스트 바
+  g.shadowColor='rgba(0,0,0,.30)';g.shadowBlur=8;g.shadowOffsetY=5;
+  const rail=g.createLinearGradient(0,0,0,h);rail.addColorStop(0,'#4b5563');rail.addColorStop(.45,'#232a33');rail.addColorStop(1,'#10151c');
+  g.fillStyle=rail;rr(g,4,8,w-8,28,8);g.fill();g.shadowColor='transparent';
+  g.fillStyle='rgba(255,255,255,.17)';g.fillRect(13,12,w-26,2);
+  for(let i=0;i<5;i++){
+   const x=15+i*33;
+   g.fillStyle='#181e26';rr(g,x,29,27,34,5);g.fill();
+   const sw=g.createLinearGradient(x,31,x+25,60);sw.addColorStop(0,'#9ed8ff');sw.addColorStop(.55,'#4da4dc');sw.addColorStop(1,'#1f6f9e');
+   g.fillStyle=sw;rr(g,x+4,33,19,24,4);g.fill();
+   g.fillStyle='rgba(255,255,255,.55)';rr(g,x+7,35,12,4,2);g.fill();
+   g.strokeStyle='rgba(0,0,0,.38)';g.lineWidth=1;rr(g,x+4,33,19,24,4);g.stroke();
+  }
+  g.fillStyle='#ffd866';rr(g,53,67,74,19,7);g.fill();g.fillStyle='#2a2520';g.font='900 11px system-ui';g.textAlign='center';g.textBaseline='middle';g.fillText('SHIFT',90,77);
+ });
+ hazardSprites.crouch=create(330,108,(g,w,h)=>{
+  // 긴 투명 아크릴 키보드 커버 - 웅크리고 유지하는 구간
+  g.shadowColor='rgba(20,45,58,.26)';g.shadowBlur=9;g.shadowOffsetY=5;
+  const acrylic=g.createLinearGradient(0,0,0,h);acrylic.addColorStop(0,'rgba(240,252,255,.76)');acrylic.addColorStop(.52,'rgba(164,211,226,.43)');acrylic.addColorStop(1,'rgba(80,139,160,.35)');
+  g.fillStyle=acrylic;rr(g,4,7,w-8,57,14);g.fill();g.shadowColor='transparent';
+  g.strokeStyle='rgba(64,119,139,.55)';g.lineWidth=2;rr(g,4,7,w-8,57,14);g.stroke();
+  g.strokeStyle='rgba(255,255,255,.72)';g.lineWidth=2;g.beginPath();g.moveTo(18,15);g.lineTo(w-24,15);g.stroke();
+  for(let i=0;i<6;i++){g.fillStyle='rgba(255,255,255,.24)';g.beginPath();g.arc(40+i*47,34+(i%2)*7,9,0,Math.PI*2);g.fill()}
+  g.fillStyle='#fff1a8';rr(g,112,74,106,22,8);g.fill();g.fillStyle='#29251f';g.font='900 11px system-ui';g.textAlign='center';g.textBaseline='middle';g.fillText('HOLD  ↓',165,85);
+ });
+}
+
 let resizeRaf=0;
 function resize(){
  const r=shell.getBoundingClientRect();W=Math.max(1,r.width);H=Math.max(1,r.height);
@@ -135,7 +168,7 @@ function resize(){
  groundY=H*.73;physicsScale=Math.max(.55,Math.min(1.02,H/610));
  skyGradient=ctx.createLinearGradient(0,0,0,H);skyGradient.addColorStop(0,'#dff4ff');skyGradient.addColorStop(.62,'#c9ebf8');skyGradient.addColorStop(1,'#9bc9da');
  abyssGradient=ctx.createLinearGradient(0,groundY,0,H);abyssGradient.addColorStop(0,'rgba(35,50,60,.10)');abyssGradient.addColorStop(.35,'rgba(28,38,46,.32)');abyssGradient.addColorStop(1,'rgba(9,14,19,.88)');
- buildObjectSprites();
+ buildObjectSprites();buildHazardSprites();
  for(const p of platforms)buildPlatformSprite(p);
  if(player&&player.onGround&&lastSupportId){const p=platforms.find(x=>x.id===lastSupportId);if(p)player.y=p.y-player.h}
 }
@@ -177,9 +210,27 @@ function maybeAddGroundTarget(p){
  const type=TYPE_KEYS[(Math.random()*TYPE_KEYS.length)|0],w=type==='bubble'?82:66+Math.random()*12,h=type==='jelly'?38:type==='wax'?31:29;
  const x=p.x+p.w*(.56+Math.random()*.20);objects.push({x,y:p.y-h,w,h,type,hit:false,burst:false,compress:0,air:false});
 }
+function addHazard(p,type){
+ const margin=Math.max(54,Math.min(92,p.w*.12));
+ let w,x;
+ if(type==='slide'){
+  w=Math.max(118,Math.min(168,p.w*.25));
+  x=p.x+Math.min(p.w-w-margin,Math.max(margin,p.w*.58));
+ }else{
+  w=Math.max(245,Math.min(330,p.w*.48));
+  x=p.x+Math.min(p.w-w-margin,Math.max(margin,p.w*.43));
+ }
+ const h={id:'h'+(++hazardSeq),type,x,y:p.y,w,platformId:p.id,hit:false,passed:false};hazards.push(h);return h;
+}
+function generateActionSection(type){
+ nextX+=Math.max(58,Math.min(105,62+Math.random()*50));
+ const keys=type==='crouch'?12+((Math.random()*2)|0):10+((Math.random()*2)|0);
+ const p=addKeyboardPlatform(nextX,keys);nextX=p.x+p.w;addHazard(p,type);
+}
 function generateSection(){
  const {stride}=keyboardMetrics();sectionSeq++;
- const airBridge=sectionSeq%3===0||Math.random()<.42;
+ const pattern=sectionSeq%6;
+ const airBridge=pattern===3||pattern===0;
  if(airBridge){
   const count=3+((Math.random()*2)|0),step=Math.max(86,Math.min(112,W*.105)),lead=Math.max(62,Math.min(105,W*.08));
   nextX+=lead;
@@ -190,6 +241,10 @@ function generateSection(){
   }
   nextX+=count*step+Math.max(55,W*.045);
   const p=addKeyboardPlatform(nextX,4+((Math.random()*4)|0));nextX=p.x+p.w;maybeAddGroundTarget(p);
+ }else if(pattern===2){
+  generateActionSection('slide');
+ }else if(pattern===5){
+  generateActionSection('crouch');
  }else{
   nextX+=Math.max(72,Math.min(145,74+Math.random()*80));
   const p=addKeyboardPlatform(nextX,4+((Math.random()*5)|0));nextX=p.x+p.w;maybeAddGroundTarget(p);
@@ -208,10 +263,10 @@ function triggerKeyboardContact(p,accent=false){
 }
 function setAction(action){if(!player||player.action===action)return;player.action=action;player.actionTime=0}
 function reset(){
- platforms=[];objects=[];particles=[];distance=0;hp=100;combo=0;speed=Math.max(235,Math.min(320,H*.64));runTime=0;shake=0;flash=0;keyboardTravel=0;lastSteppedKey=null;hudClock=0;platformSeq=0;sectionSeq=0;jumpBufferUntil=0;coyoteUntil=0;lastSupportId=null;
+ platforms=[];hazards=[];objects=[];particles=[];distance=0;hp=100;combo=0;speed=Math.max(235,Math.min(320,H*.64));runTime=0;shake=0;flash=0;keyboardTravel=0;lastSteppedKey=null;hudClock=0;platformSeq=0;hazardSeq=0;sectionSeq=0;jumpBufferUntil=0;coyoteUntil=0;lastSupportId=null;
  const {stride}=keyboardMetrics(),startKeys=Math.max(7,Math.ceil((W*.72+150)/stride));
  const first=addKeyboardPlatform(-120,startKeys);nextX=first.x+first.w;
- player={x:W*.16,y:first.y-68,w:58,h:68,vy:0,onGround:true,action:'run',actionTime:0,slideTimer:0,crouchHeld:false};lastSupportId=first.id;coyoteUntil=performance.now()/1000+COYOTE;triggerKeyboardContact(first,true);
+ player={x:W*.16,y:first.y-68,w:58,h:68,vy:0,onGround:true,action:'run',actionTime:0,slideTimer:0,crouchHeld:false,invuln:0};lastSupportId=first.id;coyoteUntil=performance.now()/1000+COYOTE;triggerKeyboardContact(first,true);
  while(nextX<W+1100)generateSection();updateHud(true);
 }
 async function wakeAudio(){await initAudio()}
@@ -233,13 +288,43 @@ function burst(o,perfect){
  showToast(perfect?'PERFECT!':TYPES[o.type].label+'!');updateHud(true);
 }
 function showToast(text){toast.textContent=text;toast.classList.remove('show');void toast.offsetWidth;toast.classList.add('show')}
+function playerBody(){
+ const bottom=player.y+player.h;
+ if(player.onGround&&player.action==='slide')return {x:player.x+4,y:bottom-28,w:player.w+24,h:28};
+ if(player.onGround&&player.action==='crouch')return {x:player.x+8,y:bottom-42,w:player.w-12,h:42};
+ return {x:player.x+9,y:bottom-62,w:player.w-18,h:62};
+}
+function hazardRect(h){
+ if(h.type==='slide')return {x:h.x+7,y:h.y-100,w:Math.max(12,h.w-14),h:66};
+ return {x:h.x+5,y:h.y-100,w:Math.max(12,h.w-10),h:52};
+}
+function rectOverlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y}
+function hitHazard(h){
+ if(!player||player.invuln>0||h.hit)return;
+ h.hit=true;player.invuln=.78;hp=Math.max(0,hp-(h.type==='slide'?28:24));combo=0;shake=8;flash=.20;
+ showToast(h.type==='slide'?'SHIFT! 슬라이드':'↓ 웅크리기');
+ if(navigator.vibrate)navigator.vibrate([24,16,28]);
+ updateHud(true);if(hp<=0)gameOver('obstacle');
+}
+function checkHazards(){
+ if(!player)return;
+ const body=playerBody();
+ for(const h of hazards){
+  if(h.x>W+120||h.x+h.w<-120)continue;
+  if(!h.hit&&rectOverlap(body,hazardRect(h))){hitHazard(h);if(state!=='playing')return}
+  if(!h.passed&&h.x+h.w<player.x-4){
+   h.passed=true;
+   if(!h.hit){hp=Math.min(100,hp+1);showToast(h.type==='slide'?'SLIDE!':'CROUCH!');updateHud(true)}
+  }
+ }
+}
 function updateHud(force=false){
  if(!force&&hudClock<.075)return;hudClock=0;hpText.textContent=Math.max(0,Math.ceil(hp));hpFill.style.transform=`scaleX(${Math.max(0,hp)/100})`;metersEl.textContent=Math.floor(distance);comboN.textContent=combo>=2?`×${combo}`:'';comboT.textContent=combo>=2?'CRUNCH COMBO':'';
 }
 function gameOver(reason='energy'){
  if(state!=='playing')return;state='over';const m=Math.floor(distance);if(m>best){best=m;localStorage.setItem('tactileBest',best)}bestText.textContent=`BEST ${best}m`;
- document.querySelector('.title').innerHTML=reason==='fall'?`💥 추락!<br>${m}m`:`${m}m<br>달렸어!`;
- document.querySelector('.sub').innerHTML=reason==='fall'?`빈 곳에 떨어지면 바로 게임오버야.<br><b>키보드 발판 → 공중 ASMR 발판 → 다음 키보드</b>로 이어가봐.`:`더 멀리 이어 달려보자.`;
+ document.querySelector('.title').innerHTML=reason==='fall'?`💥 추락!<br>${m}m`:reason==='obstacle'?`💢 장애물 충돌!<br>${m}m`:`${m}m<br>달렸어!`;
+ document.querySelector('.sub').innerHTML=reason==='fall'?`빈 곳에 떨어지면 바로 게임오버야.<br><b>키보드 → 공중 ASMR 발판 → 다음 키보드</b>로 이어가봐.`:reason==='obstacle'?`체력이 다 떨어졌어. <b>SHIFT 슬라이드</b>와 <b>↓ 웅크리기</b>로 장애물을 피해서 달려봐.`:`더 멀리 이어 달려보자.`;
  startBtn.textContent='다시 달리기';overlay.style.display='grid';updateHud(true);
 }
 
@@ -247,8 +332,9 @@ function step(dt){
  if(state!=='playing')return;
  runTime+=dt;hudClock+=dt;distance+=speed*dt*.035;speed=Math.min(345,speed+dt*1.8);hp=Math.max(0,hp-dt*.08);
  const now=performance.now()/1000,dx=speed*dt;
- player.actionTime+=dt;if(player.slideTimer>0)player.slideTimer=Math.max(0,player.slideTimer-dt);
+ player.actionTime+=dt;if(player.slideTimer>0)player.slideTimer=Math.max(0,player.slideTimer-dt);if(player.invuln>0)player.invuln=Math.max(0,player.invuln-dt);
  for(const p of platforms){p.x-=dx;if(p.pressedTimer>0)p.pressedTimer=Math.max(0,p.pressedTimer-dt)}
+ for(const h of hazards)h.x-=dx;
  for(const o of objects){o.x-=dx;if(o.compress>0)o.compress=Math.max(0,o.compress-dt*2.8)}
  nextX-=dx;
  keyboardTravel+=dx;
@@ -282,8 +368,10 @@ function step(dt){
  }
  if(player.onGround&&jumpBufferUntil>=now)executeJump();
  else if(jumpBufferUntil&&jumpBufferUntil<now)jumpBufferUntil=0;
+ checkHazards();if(state!=='playing')return;
 
  let pw=0;for(let i=0;i<platforms.length;i++)if(platforms[i].x+platforms[i].w>-180)platforms[pw++]=platforms[i];platforms.length=pw;
+ let hw=0;for(let i=0;i<hazards.length;i++)if(hazards[i].x+hazards[i].w>-190)hazards[hw++]=hazards[i];hazards.length=hw;
  let ow=0;for(let i=0;i<objects.length;i++)if(objects[i].x+objects[i].w>-160)objects[ow++]=objects[i];objects.length=ow;
  let qw=0;for(let i=0;i<particles.length;i++){const p=particles[i];p.life-=dt;if(p.life>0){p.vy+=620*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;particles[qw++]=p}}particles.length=qw;
  while(nextX<W+1100)generateSection();
@@ -307,6 +395,25 @@ function drawPlatforms(){
   }
  }
 }
+function drawHazards(){
+ for(const h of hazards){
+  if(h.x>W+120||h.x+h.w<-120)continue;
+  const img=hazardSprites[h.type];if(!img)continue;
+  const ratio=img.height/img.width,drawH=h.w*ratio;
+  const clearance=h.type==='slide'?34:48;
+  const y=h.y-clearance-drawH;
+  ctx.save();
+  if(h.hit)ctx.globalAlpha=.48;
+  ctx.drawImage(img,h.x,y,h.w,drawH);
+  ctx.restore();
+  // 진입 전 작은 바닥 안내 마커
+  if(!h.passed&&h.x>player.x-40){
+   const tx=h.x-34,ty=h.y-18;
+   ctx.save();ctx.globalAlpha=.82;ctx.fillStyle=h.type==='slide'?'#ffd866':'#fff1a8';rr(ctx,tx-22,ty-11,44,19,7);ctx.fill();
+   ctx.fillStyle='#29251f';ctx.font='900 9px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(h.type==='slide'?'SHIFT':'↓ HOLD',tx,ty-1);ctx.restore();
+  }
+ }
+}
 function drawObject(o){
  const img=objectSprites[o.type];if(!img)return;const comp=o.burst?Math.max(.08,o.compress):1-o.compress*.55;
  ctx.save();ctx.translate(o.x+o.w/2,o.y+o.h);ctx.scale(1+(1-comp)*.32,comp);ctx.globalAlpha=o.burst?Math.max(.38,comp):1;ctx.drawImage(img,-o.w/2,-o.h,o.w,o.h);ctx.restore();
@@ -316,10 +423,10 @@ function drawPlayer(){
  const p=player,{action,img}=currentSprite(),scale=Math.max(.72,Math.min(1.18,H/540)),baseline=p.y+p.h,centerX=p.x+p.w/2,jumpHeight=Math.max(0,groundY-baseline),shadowScale=Math.max(.35,1-jumpHeight/(H*.48));
  const shadowY=groundY+4;ctx.save();ctx.globalAlpha=.12*shadowScale;ctx.fillStyle='#071018';ctx.beginPath();ctx.ellipse(centerX,shadowY,31*shadowScale,6*shadowScale,0,0,Math.PI*2);ctx.fill();ctx.restore();if(!img||!img.complete||!img.naturalWidth)return;
  let targetH=88*scale,xOffset=0,yOffset=2;if(action==='jump'){targetH=84*scale;yOffset=0}if(action==='slide'){targetH=64*scale;xOffset=34*scale;yOffset=3}if(action==='crouch'){targetH=61*scale;yOffset=3}
- const targetW=targetH*(img.naturalWidth/img.naturalHeight),drawX=centerX-targetW/2+xOffset,drawY=baseline-targetH+yOffset;ctx.save();ctx.imageSmoothingEnabled=false;ctx.drawImage(img,Math.round(drawX),Math.round(drawY),Math.round(targetW),Math.round(targetH));ctx.restore();ctx.imageSmoothingEnabled=true;
+ const targetW=targetH*(img.naturalWidth/img.naturalHeight),drawX=centerX-targetW/2+xOffset,drawY=baseline-targetH+yOffset;ctx.save();ctx.imageSmoothingEnabled=false;if(player.invuln>0&&Math.floor(player.invuln*16)%2===0)ctx.globalAlpha=.38;ctx.drawImage(img,Math.round(drawX),Math.round(drawY),Math.round(targetW),Math.round(targetH));ctx.restore();ctx.imageSmoothingEnabled=true;
 }
 function render(t){
- ctx.save();if(shake>.1){renderSeed=(renderSeed+1)&255;const sx=((renderSeed*73)%17-8)/8,sy=((renderSeed*37)%17-8)/8;ctx.translate(sx*shake*.5,sy*shake*.5)}drawBackground(t);drawPlatforms();
+ ctx.save();if(shake>.1){renderSeed=(renderSeed+1)&255;const sx=((renderSeed*73)%17-8)/8,sy=((renderSeed*37)%17-8)/8;ctx.translate(sx*shake*.5,sy*shake*.5)}drawBackground(t);drawPlatforms();drawHazards();
  for(let i=0;i<objects.length;i++)drawObject(objects[i]);for(let i=0;i<particles.length;i++){const p=particles[i];ctx.globalAlpha=Math.max(0,p.life*2.2);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;if(player)drawPlayer();if(flash>.01){ctx.fillStyle=`rgba(255,255,255,${flash})`;ctx.fillRect(0,0,W,H)}ctx.restore();
 }
 function loop(ts){const dt=Math.min(.033,(ts-last)/1000||0);last=ts;step(dt);render(ts/1000);requestAnimationFrame(loop)}
@@ -330,6 +437,8 @@ startBtn.addEventListener('click',e=>{e.stopPropagation();void start()});
 shell.addEventListener('pointerdown',e=>{if(e.target.tagName==='BUTTON')return;e.preventDefault();doJump()},{passive:false});
 addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','KeyS','KeyW','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();if((e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW')&&!e.repeat)doJump();else if((e.code==='ShiftLeft'||e.code==='ShiftRight')&&!e.repeat)doSlide();else if((e.code==='ArrowDown'||e.code==='KeyS')&&!e.repeat)startCrouch()});
 addEventListener('keyup',e=>{if(e.code==='ArrowDown'||e.code==='KeyS')stopCrouch()});addEventListener('blur',stopCrouch);
+if(slideTouchBtn)slideTouchBtn.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();doSlide()},{passive:false});
+if(crouchTouchBtn){crouchTouchBtn.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();crouchTouchBtn.classList.add('active');startCrouch()},{passive:false});for(const ev of ['pointerup','pointercancel','pointerleave'])crouchTouchBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();crouchTouchBtn.classList.remove('active');stopCrouch()},{passive:false})}
 const ua=navigator.userAgent||'';
 const isAndroid=/Android/i.test(ua),isKakao=/KAKAOTALK/i.test(ua),isStandalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
 function setInstallHelp(text,show=true){if(!installHelp)return;installHelp.textContent=text;installHelp.classList.toggle('show',show)}
@@ -362,6 +471,6 @@ if(openChromeBtn)openChromeBtn.addEventListener('click',e=>{
  }else setInstallHelp('카카오톡 메뉴에서 “다른 브라우저로 열기”를 선택한 뒤 설치해줘.',true);
 });
 addEventListener('appinstalled',()=>{if(installBtn)installBtn.style.display='none';if(openChromeBtn)openChromeBtn.style.display='none';setInstallHelp('✅ 설치 완료! 홈 화면에서 촉감런을 실행할 수 있어.',true)});
-if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=11.1-step-hotfix').catch(()=>{}));
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=12-action-obstacles').catch(()=>{}));
 reset();state='menu';loop(performance.now());
 })();
