@@ -1,6 +1,6 @@
-const CACHE='tactile-run-v13-material-lands';
+const CACHE='tactile-run-v14-mobile-jump-slide-hold';
 const ASSETS=[
- './','./index.html','./game.js?v=13-material-lands','./manifest.webmanifest?v=13','./icons/icon-192.png','./icons/icon-512.png',
+ './','./index.html','./game.js?v=14-mobile-jump-slide-hold','./manifest.webmanifest?v=14','./icons/icon-192.png','./icons/icon-512.png',
  './KEY_1.wav','./KEY_2.wav','./KEY_3.wav','./KEY_4.wav','./KEY_5.wav',
  './wax1.wav','./wax2.wav','./wax3.wav','./wax4.wav','./wax5.wav',
  './malrang1.wav','./malrang2.wav','./malrang3.wav',

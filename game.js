@@ -11,7 +11,7 @@ let W=960,H=540,dpr=1,groundY=370,physicsScale=1,last=0,state='menu',deferredPro
 let audio=null,master=null,noiseBuffer=null,audioReady=false,audioLoadPromise=null;
 let keyboardTravel=0,lastSteppedKey=null,hudClock=0;
 let objectSprites={},hazardSprites={},renderSeed=0,skyGradient=null,abyssGradient=null;
-let platforms=[],hazards=[],nextX=0,platformSeq=0,hazardSeq=0,sectionSeq=0,materialSeq=0,jumpBufferUntil=0,coyoteUntil=0,lastSupportId=null,lastMaterialStepKey=null;
+let platforms=[],hazards=[],nextX=0,platformSeq=0,hazardSeq=0,sectionSeq=0,materialSeq=0,jumpBufferUntil=0,coyoteUntil=0,lastSupportId=null,lastMaterialStepKey=null,slideHeld=false;
 
 const SAMPLE_FILES={
  keyboard:['./KEY_1.wav','./KEY_2.wav','./KEY_3.wav','./KEY_4.wav','./KEY_5.wav'],
@@ -71,7 +71,10 @@ const SPRITE_FILES={
 const sprites={run:[],jump:[],slide:[],crouch:[]};
 for(const [action,files] of Object.entries(SPRITE_FILES))for(const src of files){const im=new Image();im.decoding='async';im.src=src;sprites[action].push(im)}
 
-const G=2250,JUMP=-790,COYOTE=.115,JUMP_BUFFER=.145,TYPE_KEYS=['jelly','wax','bubble'];
+const G=2250,COYOTE=.115,JUMP_BUFFER=.145,TYPE_KEYS=['jelly','wax','bubble'];
+function jumpPeakTarget(){return Math.max(96,Math.min(132,H*.30))}
+function jumpVelocity(){return -Math.sqrt(2*G*jumpPeakTarget())}
+function maxSafeRise(){return jumpPeakTarget()*.72}
 const TYPES={
  jelly:{label:'말랑',base:'#8b54cf'},
  wax:{label:'왁스',base:'#dd812b'},
@@ -165,7 +168,7 @@ function resize(){
  const r=shell.getBoundingClientRect();W=Math.max(1,r.width);H=Math.max(1,r.height);
  const coarse=matchMedia('(pointer:coarse)').matches;dpr=Math.min(coarse?1.08:1.45,devicePixelRatio||1);
  canvas.width=Math.max(1,Math.round(W*dpr));canvas.height=Math.max(1,Math.round(H*dpr));ctx.setTransform(dpr,0,0,dpr,0,0);ctx.imageSmoothingEnabled=true;
- groundY=H*.73;physicsScale=Math.max(.55,Math.min(1.02,H/610));
+ groundY=H*.73;physicsScale=1;
  skyGradient=ctx.createLinearGradient(0,0,0,H);skyGradient.addColorStop(0,'#dff4ff');skyGradient.addColorStop(.62,'#c9ebf8');skyGradient.addColorStop(1,'#9bc9da');
  abyssGradient=ctx.createLinearGradient(0,groundY,0,H);abyssGradient.addColorStop(0,'rgba(35,50,60,.10)');abyssGradient.addColorStop(.35,'rgba(28,38,46,.32)');abyssGradient.addColorStop(1,'rgba(9,14,19,.88)');
  buildObjectSprites();buildHazardSprites();
@@ -206,9 +209,13 @@ function addKeyboardPlatform(x,keyCount){
  const {keyW,gap,stride}=keyboardMetrics(),w=Math.max(stride*keyCount-gap,keyW),p={id:'k'+(++platformSeq),x,y:groundY,w,keyCount,seed:(platformSeq*7)%KEY_LABELS.length,img:null,visualH:140,pressedIndex:-1,pressedTimer:0};
  buildPlatformSprite(p);platforms.push(p);return p;
 }
-function addMaterialLand(x,type,lift=74,width=null){
+function addMaterialLand(x,type,lift=42,width=null){
  const baseW=width||Math.max(245,Math.min(365,W*.31));
  const h=type==='jelly'?50:type==='wax'?43:39;
+ // 모바일에서도 키보드 바닥에서 한 번의 점프로 확실히 올라갈 수 있도록
+ // '발판 윗면 높이'를 점프 최대높이의 72% 이내로 제한한다.
+ const maxLift=Math.max(10,maxSafeRise()-h);
+ lift=Math.max(6,Math.min(lift,maxLift));
  const stepSpan=type==='bubble'?42:type==='wax'?55:52;
  const count=Math.max(4,Math.ceil(baseW/stepSpan));
  const o={
@@ -252,18 +259,23 @@ function triggerMaterialStep(o,accent=false){
 }
 function addMaterialChain(){
  const count=2+((Math.random()*2)|0);
- let lastLift=64+Math.random()*18;
- nextX+=Math.max(72,Math.min(118,W*.09));
+ // 첫 재질땅은 키보드보다 윗면이 약 58~75px 높은 수준에서 시작한다.
+ // 화면 높이에 따라 maxSafeRise()가 더 낮으면 자동으로 내려간다.
+ let lastTopRise=Math.min(maxSafeRise(),58+Math.random()*17);
+ nextX+=Math.max(72,Math.min(108,W*.085));
  const order=[...TYPE_KEYS].sort(()=>Math.random()-.5);
  for(let i=0;i<count;i++){
   const type=order[i%order.length];
-  const lift=Math.max(52,Math.min(118,lastLift+(Math.random()-.5)*34));
+  const h=type==='jelly'?50:type==='wax'?43:39;
+  // 연속 재질땅끼리는 높이차를 작게 제한해서 모바일에서도 점프로 연결 가능하게 한다.
+  const topRise=Math.max(44,Math.min(maxSafeRise(),lastTopRise+(Math.random()-.5)*24));
+  const lift=Math.max(6,topRise-h);
   const width=Math.max(245,Math.min(370,W*(.28+Math.random()*.07)));
   const o=addMaterialLand(nextX,type,lift,width);
   nextX=o.x+o.w;
   // 직접 점프해서 다음 재질 땅으로 넘어가는 간격. 자동 반동은 없다.
-  nextX+=Math.max(72,Math.min(118,74+Math.random()*38));
-  lastLift=lift;
+  nextX+=Math.max(66,Math.min(106,70+Math.random()*30));
+  lastTopRise=groundY-o.y;
  }
  const p=addKeyboardPlatform(nextX,5+((Math.random()*4)|0));nextX=p.x+p.w;
 }
@@ -318,20 +330,28 @@ function reset(){
  platforms=[];hazards=[];objects=[];particles=[];distance=0;hp=100;combo=0;speed=Math.max(235,Math.min(320,H*.64));runTime=0;shake=0;flash=0;keyboardTravel=0;lastSteppedKey=null;lastMaterialStepKey=null;hudClock=0;platformSeq=0;hazardSeq=0;sectionSeq=0;materialSeq=0;jumpBufferUntil=0;coyoteUntil=0;lastSupportId=null;
  const {stride}=keyboardMetrics(),startKeys=Math.max(7,Math.ceil((W*.72+150)/stride));
  const first=addKeyboardPlatform(-120,startKeys);nextX=first.x+first.w;
- player={x:W*.16,y:first.y-68,w:58,h:68,vy:0,onGround:true,action:'run',actionTime:0,slideTimer:0,crouchHeld:false,invuln:0};lastSupportId=first.id;coyoteUntil=performance.now()/1000+COYOTE;triggerKeyboardContact(first,true);
+ slideHeld=false;player={x:W*.16,y:first.y-68,w:58,h:68,vy:0,onGround:true,action:'run',actionTime:0,slideTimer:0,crouchHeld:false,invuln:0};lastSupportId=first.id;coyoteUntil=performance.now()/1000+COYOTE;triggerKeyboardContact(first,true);
  while(nextX<W+1100)generateSection();updateHud(true);
 }
 async function wakeAudio(){await initAudio()}
 function executeJump(){
- player.slideTimer=0;player.crouchHeld=false;player.vy=JUMP*physicsScale;player.onGround=false;lastSupportId=null;lastSteppedKey=null;lastMaterialStepKey=null;jumpBufferUntil=0;coyoteUntil=0;setAction('jump');jumpSound();hint.style.opacity=.15;if(navigator.vibrate)navigator.vibrate(7);
+ player.slideTimer=0;player.crouchHeld=false;player.vy=jumpVelocity();player.onGround=false;lastSupportId=null;lastSteppedKey=null;lastMaterialStepKey=null;jumpBufferUntil=0;coyoteUntil=0;setAction('jump');jumpSound();hint.style.opacity=.15;if(navigator.vibrate)navigator.vibrate(7);
 }
 function doJump(){
  if(state!=='playing'||!player)return;void wakeAudio();const now=performance.now()/1000;jumpBufferUntil=now+JUMP_BUFFER;
  if(player.onGround||now<=coyoteUntil)executeJump();
 }
-function doSlide(){if(state!=='playing'||!player.onGround)return;void wakeAudio();player.crouchHeld=false;player.slideTimer=.55;setAction('slide');hint.style.opacity=.15;if(navigator.vibrate)navigator.vibrate(7)}
-function startCrouch(){if(state!=='playing')return;void wakeAudio();player.crouchHeld=true;player.slideTimer=0;if(player.onGround)setAction('crouch')}
-function stopCrouch(){if(!player)return;player.crouchHeld=false;if(state==='playing'&&player.onGround&&player.slideTimer<=0)setAction('run')}
+function startSlide(){
+ if(state!=='playing'||!player)return;
+ void wakeAudio();slideHeld=true;player.crouchHeld=false;player.slideTimer=0;
+ if(player.onGround)setAction('slide');hint.style.opacity=.15;if(navigator.vibrate)navigator.vibrate(7);
+}
+function stopSlide(){
+ slideHeld=false;if(!player)return;
+ if(state==='playing'&&player.onGround&&!player.crouchHeld)setAction('run');
+}
+function startCrouch(){if(state!=='playing')return;void wakeAudio();slideHeld=false;player.crouchHeld=true;player.slideTimer=0;if(player.onGround)setAction('crouch')}
+function stopCrouch(){if(!player)return;player.crouchHeld=false;if(state==='playing'&&player.onGround&&!slideHeld)setAction('run')}
 function burst(o,perfect){
  // v13: 재질 땅은 사라지지 않는다. 호환용으로 접촉 반응만 호출한다.
  triggerMaterialStep(o,perfect);
@@ -339,7 +359,7 @@ function burst(o,perfect){
 function showToast(text){toast.textContent=text;toast.classList.remove('show');void toast.offsetWidth;toast.classList.add('show')}
 function playerBody(){
  const bottom=player.y+player.h;
- if(player.onGround&&player.action==='slide')return {x:player.x+4,y:bottom-28,w:player.w+24,h:28};
+ if(player.onGround&&slideHeld&&player.action==='slide')return {x:player.x+4,y:bottom-28,w:player.w+24,h:28};
  if(player.onGround&&player.action==='crouch')return {x:player.x+8,y:bottom-42,w:player.w-12,h:42};
  return {x:player.x+9,y:bottom-62,w:player.w-18,h:62};
 }
@@ -381,7 +401,7 @@ function step(dt){
  if(state!=='playing')return;
  runTime+=dt;hudClock+=dt;distance+=speed*dt*.035;speed=Math.min(345,speed+dt*1.8);hp=Math.max(0,hp-dt*.08);
  const now=performance.now()/1000,dx=speed*dt;
- player.actionTime+=dt;if(player.slideTimer>0)player.slideTimer=Math.max(0,player.slideTimer-dt);if(player.invuln>0)player.invuln=Math.max(0,player.invuln-dt);
+ player.actionTime+=dt;if(player.invuln>0)player.invuln=Math.max(0,player.invuln-dt);
  for(const p of platforms){p.x-=dx;if(p.pressedTimer>0)p.pressedTimer=Math.max(0,p.pressedTimer-dt)}
  for(const h of hazards)h.x-=dx;
  for(const o of objects){
@@ -400,7 +420,7 @@ function step(dt){
    const o=objects[i];if(o.kind!=='land')continue;
    if(px2>o.x+3&&px1<o.x+o.w-3&&prevBottom<=o.y+10&&newBottom>=o.y){
     player.y=o.y-player.h;player.vy=0;player.onGround=true;lastSupportId=o.id;coyoteUntil=now+COYOTE;
-    if(player.slideTimer>0)setAction('slide');else if(player.crouchHeld)setAction('crouch');else setAction('run');
+    if(slideHeld)setAction('slide');else if(player.crouchHeld)setAction('crouch');else setAction('run');
     lastSteppedKey=null;
     triggerMaterialStep(o,!wasGrounded||prevSupport!==o.id);
     landed=true;break;
@@ -411,7 +431,7 @@ function step(dt){
     const p=platforms[i];if(px2<=p.x+4||px1>=p.x+p.w-4)continue;
     if(prevBottom<=p.y+9&&newBottom>=p.y){
      player.y=p.y-player.h;player.vy=0;player.onGround=true;lastSupportId=p.id;coyoteUntil=now+COYOTE;
-     if(player.slideTimer>0)setAction('slide');else if(player.crouchHeld)setAction('crouch');else setAction('run');
+     if(slideHeld)setAction('slide');else if(player.crouchHeld)setAction('crouch');else setAction('run');
      lastMaterialStepKey=null;triggerKeyboardContact(p,!wasGrounded||prevSupport!==p.id);landed=true;break;
     }
    }
@@ -527,9 +547,13 @@ async function start(){
 }
 startBtn.addEventListener('click',e=>{e.stopPropagation();void start()});
 shell.addEventListener('pointerdown',e=>{if(e.target.tagName==='BUTTON')return;e.preventDefault();doJump()},{passive:false});
-addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','KeyS','KeyW','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();if((e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW')&&!e.repeat)doJump();else if((e.code==='ShiftLeft'||e.code==='ShiftRight')&&!e.repeat)doSlide();else if((e.code==='ArrowDown'||e.code==='KeyS')&&!e.repeat)startCrouch()});
-addEventListener('keyup',e=>{if(e.code==='ArrowDown'||e.code==='KeyS')stopCrouch()});addEventListener('blur',stopCrouch);
-if(slideTouchBtn)slideTouchBtn.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();doSlide()},{passive:false});
+addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','KeyS','KeyW','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();if((e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW')&&!e.repeat)doJump();else if((e.code==='ShiftLeft'||e.code==='ShiftRight')&&!e.repeat)startSlide();else if((e.code==='ArrowDown'||e.code==='KeyS')&&!e.repeat)startCrouch()});
+addEventListener('keyup',e=>{if(e.code==='ArrowDown'||e.code==='KeyS')stopCrouch();if(e.code==='ShiftLeft'||e.code==='ShiftRight')stopSlide()});
+addEventListener('blur',()=>{stopCrouch();stopSlide()});
+if(slideTouchBtn){
+ slideTouchBtn.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();slideTouchBtn.classList.add('active');startSlide()},{passive:false});
+ for(const ev of ['pointerup','pointercancel','pointerleave'])slideTouchBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();slideTouchBtn.classList.remove('active');stopSlide()},{passive:false});
+}
 if(crouchTouchBtn){crouchTouchBtn.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();crouchTouchBtn.classList.add('active');startCrouch()},{passive:false});for(const ev of ['pointerup','pointercancel','pointerleave'])crouchTouchBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();crouchTouchBtn.classList.remove('active');stopCrouch()},{passive:false})}
 const ua=navigator.userAgent||'';
 const isAndroid=/Android/i.test(ua),isKakao=/KAKAOTALK/i.test(ua),isStandalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
@@ -563,6 +587,6 @@ if(openChromeBtn)openChromeBtn.addEventListener('click',e=>{
  }else setInstallHelp('카카오톡 메뉴에서 “다른 브라우저로 열기”를 선택한 뒤 설치해줘.',true);
 });
 addEventListener('appinstalled',()=>{if(installBtn)installBtn.style.display='none';if(openChromeBtn)openChromeBtn.style.display='none';setInstallHelp('✅ 설치 완료! 홈 화면에서 촉감런을 실행할 수 있어.',true)});
-if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=13-material-lands').catch(()=>{}));
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=14-mobile-jump-slide-hold').catch(()=>{}));
 reset();state='menu';loop(performance.now());
 })();
