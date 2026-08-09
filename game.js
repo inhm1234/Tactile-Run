@@ -244,11 +244,12 @@ addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','KeyS','KeyW','
 addEventListener('keyup',e=>{if(e.code==='ArrowDown'||e.code==='KeyS')stopCrouch()});addEventListener('blur',stopCrouch);
 const ua=navigator.userAgent||'';
 const isAndroid=/Android/i.test(ua),isKakao=/KAKAOTALK/i.test(ua),isStandalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
-function setInstallHelp(text,show=true){installHelp.textContent=text;installHelp.classList.toggle('show',show)}
+function setInstallHelp(text,show=true){if(!installHelp)return;installHelp.textContent=text;installHelp.classList.toggle('show',show)}
 function setupInstallUI(){
- if(isStandalone){installBtn.style.display='none';openChromeBtn.style.display='none';setInstallHelp('✅ 앱으로 실행 중이에요.',true);return}
+ if(!installBtn)return;
+ if(isStandalone){installBtn.style.display='none';if(openChromeBtn)openChromeBtn.style.display='none';setInstallHelp('✅ 앱으로 실행 중이에요.',true);return}
  if(isKakao&&isAndroid){
-  openChromeBtn.style.display='block';installBtn.style.display='none';
+  if(openChromeBtn)openChromeBtn.style.display='block';installBtn.style.display='none';
   setInstallHelp('카카오톡 안에서는 설치 메뉴가 제한될 수 있어요. Chrome으로 연 뒤 Chrome 메뉴의 “앱 설치” 또는 “홈 화면에 추가”를 사용하세요.',true);
  }else{
   installBtn.style.display='block';installBtn.textContent='📲 앱 설치';
@@ -256,13 +257,13 @@ function setupInstallUI(){
  }
 }
 setupInstallUI();
-addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;if(!isKakao){installBtn.style.display='block';installBtn.textContent='📲 앱 설치';setInstallHelp('',false)}});
-installBtn.addEventListener('click',async e=>{
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;if(!isKakao&&installBtn){installBtn.style.display='block';installBtn.textContent='📲 앱 설치';setInstallHelp('',false)}});
+if(installBtn)installBtn.addEventListener('click',async e=>{
  e.stopPropagation();
  if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;installBtn.style.display='none';setInstallHelp('설치가 완료되면 홈 화면의 “촉감런” 아이콘으로 실행해봐.',true);return}
  setInstallHelp('Chrome 오른쪽 위 ⋮ → “앱 설치” 또는 “홈 화면에 추가”를 눌러줘. 메뉴가 없으면 잠깐 기다렸다가 페이지를 새로고침해봐.',true);
 });
-openChromeBtn.addEventListener('click',e=>{
+if(openChromeBtn)openChromeBtn.addEventListener('click',e=>{
  e.stopPropagation();
  const fallback=location.href.split('#')[0];
  if(isAndroid){
@@ -272,7 +273,7 @@ openChromeBtn.addEventListener('click',e=>{
   setTimeout(()=>setInstallHelp('Chrome이 자동으로 열리지 않으면 카카오톡 오른쪽 위 메뉴에서 “다른 브라우저로 열기”를 선택해줘.',true),900);
  }else setInstallHelp('카카오톡 메뉴에서 “다른 브라우저로 열기”를 선택한 뒤 설치해줘.',true);
 });
-addEventListener('appinstalled',()=>{installBtn.style.display='none';openChromeBtn.style.display='none';setInstallHelp('✅ 설치 완료! 홈 화면에서 촉감런을 실행할 수 있어.',true)});
-if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=10-key-swap').catch(()=>{}));
+addEventListener('appinstalled',()=>{if(installBtn)installBtn.style.display='none';if(openChromeBtn)openChromeBtn.style.display='none';setInstallHelp('✅ 설치 완료! 홈 화면에서 촉감런을 실행할 수 있어.',true)});
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=10.1-hotfix').catch(()=>{}));
 reset();state='menu';loop(performance.now());
 })();
