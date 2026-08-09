@@ -5,13 +5,14 @@ const shell=document.getElementById('shell'),overlay=document.getElementById('ov
 const startBtn=document.getElementById('startBtn'),installBtn=document.getElementById('installBtn'),openChromeBtn=document.getElementById('openChromeBtn'),installHelp=document.getElementById('installHelp');
 const hpText=document.getElementById('hpText'),hpFill=document.getElementById('hpFill'),metersEl=document.getElementById('meters');
 const comboN=document.getElementById('comboN'),comboT=document.getElementById('comboT'),toast=document.getElementById('toast'),hint=document.getElementById('hint'),bestText=document.getElementById('bestText'),soundStatus=document.getElementById('soundStatus');
-const slideTouchBtn=document.getElementById('slideTouchBtn'),crouchTouchBtn=document.getElementById('crouchTouchBtn');
+const moveLeftBtn=document.getElementById('moveLeftBtn'),moveRightBtn=document.getElementById('moveRightBtn'),jumpTouchBtn=document.getElementById('jumpTouchBtn'),slideTouchBtn=document.getElementById('slideTouchBtn'),crouchTouchBtn=document.getElementById('crouchTouchBtn');
 
 let W=960,H=540,dpr=1,groundY=370,physicsScale=1,last=0,state='menu',deferredPrompt=null;
 let audio=null,master=null,noiseBuffer=null,audioReady=false,audioLoadPromise=null;
 let keyboardTravel=0,lastSteppedKey=null,hudClock=0;
 let objectSprites={},hazardSprites={},renderSeed=0,skyGradient=null,abyssGradient=null;
 let platforms=[],hazards=[],nextX=0,platformSeq=0,hazardSeq=0,sectionSeq=0,materialSeq=0,jumpBufferUntil=0,coyoteUntil=0,lastSupportId=null,lastMaterialStepKey=null,slideHeld=false;
+let moveLeftHeld=false,moveRightHeld=false,worldPos=0,furthestWorldPos=0,levelGoal=0,levelName='LEVEL 1 · 촉감 연구소';
 
 const SAMPLE_FILES={
  keyboard:['./KEY_1.wav','./KEY_2.wav','./KEY_3.wav','./KEY_4.wav','./KEY_5.wav'],
@@ -258,61 +259,67 @@ function triggerMaterialStep(o,accent=false){
  }
 }
 function addMaterialChain(){
- const count=2+((Math.random()*2)|0);
- // 첫 재질땅은 키보드보다 윗면이 약 58~75px 높은 수준에서 시작한다.
- // 화면 높이에 따라 maxSafeRise()가 더 낮으면 자동으로 내려간다.
- let lastTopRise=Math.min(maxSafeRise(),58+Math.random()*17);
- nextX+=Math.max(72,Math.min(108,W*.085));
- const order=[...TYPE_KEYS].sort(()=>Math.random()-.5);
- for(let i=0;i<count;i++){
-  const type=order[i%order.length];
-  const h=type==='jelly'?50:type==='wax'?43:39;
-  // 연속 재질땅끼리는 높이차를 작게 제한해서 모바일에서도 점프로 연결 가능하게 한다.
-  const topRise=Math.max(44,Math.min(maxSafeRise(),lastTopRise+(Math.random()-.5)*24));
-  const lift=Math.max(6,topRise-h);
-  const width=Math.max(245,Math.min(370,W*(.28+Math.random()*.07)));
-  const o=addMaterialLand(nextX,type,lift,width);
-  nextX=o.x+o.w;
-  // 직접 점프해서 다음 재질 땅으로 넘어가는 간격. 자동 반동은 없다.
-  nextX+=Math.max(66,Math.min(106,70+Math.random()*30));
-  lastTopRise=groundY-o.y;
- }
- const p=addKeyboardPlatform(nextX,5+((Math.random()*4)|0));nextX=p.x+p.w;
+ // v15부터 랜덤 체인은 사용하지 않는다. 고정 레벨은 buildFixedLevel()에서 설계한다.
 }
-function maybeAddGroundTarget(p){
- // v13부터 작은 1회성 오브젝트 대신 긴 재질 땅을 사용한다.
- return p;
-}
-function addHazard(p,type){
- const margin=Math.max(54,Math.min(92,p.w*.12));
+function maybeAddGroundTarget(p){return p}
+function addHazard(p,type,ratio=.55){
+ const margin=Math.max(48,Math.min(86,p.w*.10));
  let w,x;
  if(type==='slide'){
-  w=Math.max(118,Math.min(168,p.w*.25));
-  x=p.x+Math.min(p.w-w-margin,Math.max(margin,p.w*.58));
+  w=Math.max(118,Math.min(168,p.w*.24));
+  x=p.x+Math.min(p.w-w-margin,Math.max(margin,p.w*ratio));
  }else{
-  w=Math.max(245,Math.min(330,p.w*.48));
-  x=p.x+Math.min(p.w-w-margin,Math.max(margin,p.w*.43));
+  w=Math.max(245,Math.min(330,p.w*.46));
+  x=p.x+Math.min(p.w-w-margin,Math.max(margin,p.w*ratio));
  }
  const h={id:'h'+(++hazardSeq),type,x,y:p.y,w,platformId:p.id,hit:false,passed:false};hazards.push(h);return h;
 }
-function generateActionSection(type){
- nextX+=Math.max(58,Math.min(105,62+Math.random()*50));
- const keys=type==='crouch'?12+((Math.random()*2)|0):10+((Math.random()*2)|0);
- const p=addKeyboardPlatform(nextX,keys);nextX=p.x+p.w;addHazard(p,type);
+function buildFixedLevel(){
+ const gap=n=>{nextX+=n};
+ const keyboard=(keys)=>{const p=addKeyboardPlatform(nextX,keys);nextX=p.x+p.w;return p};
+ const material=(type,width,lift)=>{const o=addMaterialLand(nextX,type,lift,width);nextX=o.x+o.w;return o};
+
+ // LEVEL 1 · 촉감 연구소
+ // 0) 안전한 시작 구간: 방향 조작과 점프 감 익히기
+ keyboard(6);
+
+ // 1) 왁스 → 뽁뽁이: 긴 재질땅 두 개를 직접 점프로 연결
+ gap(76); material('wax',430,16);
+ gap(84); material('bubble',470,24);
+ gap(76); keyboard(9);
+
+ // 2) 첫 슬라이드 과제: 충분한 예고 구간 뒤 낮은 스위치 바
+ gap(58); const s1=keyboard(13); addHazard(s1,'slide',.58);
+
+ // 3) 높낮이가 섞인 말랑 → 뽁뽁 → 왁스 삼단 구간
+ gap(92); material('jelly',360,34);
+ gap(74); material('bubble',330,54);
+ gap(68); material('wax',390,30);
+ gap(84); keyboard(8);
+
+ // 4) 웅크리기 유지 터널: 짧은 슬라이드로는 통과하기 어렵게 긴 구간
+ gap(56); const c1=keyboard(15); addHazard(c1,'crouch',.42);
+
+ // 5) 리듬 구간: 뽁뽁이의 연속 팝을 길게 즐기고 짧은 발판으로 이동
+ gap(88); material('bubble',540,16);
+ gap(72); keyboard(6);
+ gap(98); material('wax',315,42);
+ gap(70); material('jelly',410,18);
+
+ // 6) 복합 과제: 키보드 → 슬라이드 → 짧은 낭떠러지 → 재질 2종
+ gap(82); const s2=keyboard(12); addHazard(s2,'slide',.46);
+ gap(104); material('wax',355,24);
+ gap(78); material('bubble',420,38);
+
+ // 7) 마지막 웅크리기 + 피니시 런웨이
+ gap(78); const c2=keyboard(14); addHazard(c2,'crouch',.48);
+ gap(74); material('jelly',440,22);
+ gap(72); keyboard(17);
+
+ levelGoal=Math.max(0,nextX-W*.68);
 }
 function generateSection(){
- const {stride}=keyboardMetrics();sectionSeq++;
- const pattern=sectionSeq%7;
- if(pattern===0||pattern===3){
-  addMaterialChain();
- }else if(pattern===2){
-  generateActionSection('slide');
- }else if(pattern===5){
-  generateActionSection('crouch');
- }else{
-  nextX+=Math.max(70,Math.min(138,72+Math.random()*72));
-  const p=addKeyboardPlatform(nextX,5+((Math.random()*5)|0));nextX=p.x+p.w;
- }
+ // 고정 맵에서는 런타임 랜덤 생성을 하지 않는다.
 }
 function platformUnderFoot(){
  const footX=player.x+player.w*.50;
@@ -327,11 +334,13 @@ function triggerKeyboardContact(p,accent=false){
 }
 function setAction(action){if(!player||player.action===action)return;player.action=action;player.actionTime=0}
 function reset(){
- platforms=[];hazards=[];objects=[];particles=[];distance=0;hp=100;combo=0;speed=Math.max(235,Math.min(320,H*.64));runTime=0;shake=0;flash=0;keyboardTravel=0;lastSteppedKey=null;lastMaterialStepKey=null;hudClock=0;platformSeq=0;hazardSeq=0;sectionSeq=0;materialSeq=0;jumpBufferUntil=0;coyoteUntil=0;lastSupportId=null;
- const {stride}=keyboardMetrics(),startKeys=Math.max(7,Math.ceil((W*.72+150)/stride));
+ platforms=[];hazards=[];objects=[];particles=[];distance=0;hp=100;combo=0;speed=Math.max(250,Math.min(330,H*.67));runTime=0;shake=0;flash=0;keyboardTravel=0;lastSteppedKey=null;lastMaterialStepKey=null;hudClock=0;platformSeq=0;hazardSeq=0;sectionSeq=0;materialSeq=0;jumpBufferUntil=0;coyoteUntil=0;lastSupportId=null;
+ moveLeftHeld=false;moveRightHeld=false;worldPos=0;furthestWorldPos=0;levelGoal=0;
+ const {stride}=keyboardMetrics(),startKeys=Math.max(10,Math.ceil((W*.78+180)/stride));
  const first=addKeyboardPlatform(-120,startKeys);nextX=first.x+first.w;
- slideHeld=false;player={x:W*.16,y:first.y-68,w:58,h:68,vy:0,onGround:true,action:'run',actionTime:0,slideTimer:0,crouchHeld:false,invuln:0};lastSupportId=first.id;coyoteUntil=performance.now()/1000+COYOTE;triggerKeyboardContact(first,true);
- while(nextX<W+1100)generateSection();updateHud(true);
+ buildFixedLevel();
+ slideHeld=false;player={x:Math.max(130,W*.20),y:first.y-68,w:58,h:68,vy:0,onGround:true,action:'run',actionTime:0,slideTimer:0,crouchHeld:false,invuln:0,moving:false,facing:1};lastSupportId=first.id;coyoteUntil=performance.now()/1000+COYOTE;triggerKeyboardContact(first,true);
+ updateHud(true);
 }
 async function wakeAudio(){await initAudio()}
 function executeJump(){
@@ -391,38 +400,57 @@ function updateHud(force=false){
  if(!force&&hudClock<.075)return;hudClock=0;hpText.textContent=Math.max(0,Math.ceil(hp));hpFill.style.transform=`scaleX(${Math.max(0,hp)/100})`;metersEl.textContent=Math.floor(distance);comboN.textContent=combo>=2?`×${combo}`:'';comboT.textContent=combo>=2?'CRUNCH COMBO':'';
 }
 function gameOver(reason='energy'){
- if(state!=='playing')return;state='over';const m=Math.floor(distance);if(m>best){best=m;localStorage.setItem('tactileBest',best)}bestText.textContent=`BEST ${best}m`;
+ if(state!=='playing')return;state='over';const m=Math.floor(furthestWorldPos*.035);if(m>best){best=m;localStorage.setItem('tactileBest',best)}bestText.textContent=`BEST ${best}m`;
  document.querySelector('.title').innerHTML=reason==='fall'?`💥 추락!<br>${m}m`:reason==='obstacle'?`💢 장애물 충돌!<br>${m}m`:`${m}m<br>달렸어!`;
  document.querySelector('.sub').innerHTML=reason==='fall'?`빈 곳에 떨어지면 바로 게임오버야.<br><b>키보드 → 공중 ASMR 발판 → 다음 키보드</b>로 이어가봐.`:reason==='obstacle'?`체력이 다 떨어졌어. <b>SHIFT 슬라이드</b>와 <b>↓ 웅크리기</b>로 장애물을 피해서 달려봐.`:`더 멀리 이어 달려보자.`;
  startBtn.textContent='다시 달리기';overlay.style.display='grid';updateHud(true);
 }
 
+function levelClear(){
+ if(state!=='playing')return;
+ state='clear';
+ const m=Math.floor(furthestWorldPos*.035);
+ if(m>best){best=m;localStorage.setItem('tactileBest',best)}
+ bestText.textContent=`BEST ${best}m`;
+ document.querySelector('.title').innerHTML=`🎉 LEVEL 1 CLEAR!<br>${m}m`;
+ document.querySelector('.sub').innerHTML=`고정 코스를 완주했어.<br><b>같은 맵을 반복해서 더 깔끔한 루트와 ASMR 리듬</b>을 만들어봐.`;
+ startBtn.textContent='LEVEL 1 다시하기';overlay.style.display='grid';updateHud(true);
+}
+
 function step(dt){
  if(state!=='playing')return;
- runTime+=dt;hudClock+=dt;distance+=speed*dt*.035;speed=Math.min(345,speed+dt*1.8);hp=Math.max(0,hp-dt*.08);
- const now=performance.now()/1000,dx=speed*dt;
- player.actionTime+=dt;if(player.invuln>0)player.invuln=Math.max(0,player.invuln-dt);
+ runTime+=dt;hudClock+=dt;
+ const now=performance.now()/1000;
+ const inputDir=(moveRightHeld?1:0)-(moveLeftHeld?1:0);
+ const moveSpeed=Math.max(245,Math.min(335,H*.68));
+ const desired=inputDir*moveSpeed*dt;
+ const newPos=Math.max(0,Math.min(levelGoal,worldPos+desired));
+ const dx=newPos-worldPos;worldPos=newPos;furthestWorldPos=Math.max(furthestWorldPos,worldPos);distance=worldPos*.035;
+ player.moving=Math.abs(dx)>.01; if(inputDir!==0)player.facing=inputDir>0?1:-1;
+ if(player.moving&&player.onGround&&player.action==='run')player.actionTime+=dt;
+ else if(player.action!=='run')player.actionTime+=dt;
+ if(player.invuln>0)player.invuln=Math.max(0,player.invuln-dt);
+
  for(const p of platforms){p.x-=dx;if(p.pressedTimer>0)p.pressedTimer=Math.max(0,p.pressedTimer-dt)}
  for(const h of hazards)h.x-=dx;
  for(const o of objects){
   o.x-=dx;
-  if(o.kind==='land'&&o.type==='jelly'&&o.squish>0)o.squish=Math.max(0,o.squish-dt*.72); // 약 1.4초에 천천히 복원
+  if(o.kind==='land'&&o.type==='jelly'&&o.squish>0)o.squish=Math.max(0,o.squish-dt*.72);
  }
- nextX-=dx;keyboardTravel+=dx;
+ nextX-=dx;keyboardTravel+=Math.abs(dx);
 
  const prevBottom=player.y+player.h,wasGrounded=player.onGround,prevSupport=lastSupportId;
  player.vy+=G*physicsScale*dt;player.y+=player.vy*dt;player.onGround=false;lastSupportId=null;
  let landed=false;
  if(player.vy>=0){
   const px1=player.x+8,px2=player.x+player.w-8,newBottom=player.y+player.h;
-  // 재질 땅: 착지해도 자동으로 튀지 않는다. 일반 바닥처럼 서서 직접 다음 점프를 입력한다.
   for(let i=0;i<objects.length;i++){
    const o=objects[i];if(o.kind!=='land')continue;
    if(px2>o.x+3&&px1<o.x+o.w-3&&prevBottom<=o.y+10&&newBottom>=o.y){
     player.y=o.y-player.h;player.vy=0;player.onGround=true;lastSupportId=o.id;coyoteUntil=now+COYOTE;
     if(slideHeld)setAction('slide');else if(player.crouchHeld)setAction('crouch');else setAction('run');
     lastSteppedKey=null;
-    triggerMaterialStep(o,!wasGrounded||prevSupport!==o.id);
+    if(player.moving||!wasGrounded||prevSupport!==o.id)triggerMaterialStep(o,!wasGrounded||prevSupport!==o.id);
     landed=true;break;
    }
   }
@@ -432,7 +460,9 @@ function step(dt){
     if(prevBottom<=p.y+9&&newBottom>=p.y){
      player.y=p.y-player.h;player.vy=0;player.onGround=true;lastSupportId=p.id;coyoteUntil=now+COYOTE;
      if(slideHeld)setAction('slide');else if(player.crouchHeld)setAction('crouch');else setAction('run');
-     lastMaterialStepKey=null;triggerKeyboardContact(p,!wasGrounded||prevSupport!==p.id);landed=true;break;
+     lastMaterialStepKey=null;
+     if(player.moving||!wasGrounded||prevSupport!==p.id)triggerKeyboardContact(p,!wasGrounded||prevSupport!==p.id);
+     landed=true;break;
     }
    }
   }
@@ -443,17 +473,14 @@ function step(dt){
  }
  if(player.onGround&&jumpBufferUntil>=now)executeJump();
  else if(jumpBufferUntil&&jumpBufferUntil<now)jumpBufferUntil=0;
+
  checkHazards();if(state!=='playing')return;
 
- let pw=0;for(let i=0;i<platforms.length;i++)if(platforms[i].x+platforms[i].w>-180)platforms[pw++]=platforms[i];platforms.length=pw;
- let hw=0;for(let i=0;i<hazards.length;i++)if(hazards[i].x+hazards[i].w>-190)hazards[hw++]=hazards[i];hazards.length=hw;
- let ow=0;for(let i=0;i<objects.length;i++)if(objects[i].x+objects[i].w>-220)objects[ow++]=objects[i];objects.length=ow;
- let qw=0;for(let i=0;i<particles.length;i++){const p=particles[i];p.life-=dt;if(p.life>0){p.vy+=620*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;particles[qw++]=p}}particles.length=qw;
- while(nextX<W+1100)generateSection();
+ let qw=0;for(let i=0;i<particles.length;i++){const p=particles[i];p.life-=dt;if(p.life>0){p.vy+=620*dt;p.x+=p.vx*dt-dx;p.y+=p.vy*dt;particles[qw++]=p}}particles.length=qw;
  if(player.y>H+70){gameOver('fall');return}
+ if(worldPos>=levelGoal-.5){levelClear();return}
  shake*=Math.pow(.025,dt);flash*=Math.pow(.025,dt);updateHud();
 }
-
 function drawBackground(t){
  ctx.fillStyle=skyGradient||'#dff4ff';ctx.fillRect(0,0,W,H);
  ctx.fillStyle='rgba(255,255,255,.72)';for(let i=0;i<5;i++){const x=((i*241-t*9)%(W+240))-110,y=70+(i%3)*72;ctx.beginPath();ctx.ellipse(x,y,38,15,0,0,Math.PI*2);ctx.ellipse(x+31,y+3,26,12,0,0,Math.PI*2);ctx.fill()}
@@ -530,12 +557,15 @@ function drawObject(o){
  }
  ctx.restore();
 }
-function currentSprite(){let action=player.onGround?player.action:'jump',idx=0;if(action==='run')idx=Math.floor(player.actionTime/.095)%4;else if(action==='jump')idx=player.vy<35?0:1;else if(action==='slide')idx=Math.floor(player.actionTime/.12)%2;else if(action==='crouch')idx=player.actionTime<.13?0:1;return {action,img:sprites[action][idx]}}
+function currentSprite(){let action=player.onGround?player.action:'jump',idx=0;if(action==='run')idx=player.moving?Math.floor(player.actionTime/.095)%4:0;else if(action==='jump')idx=player.vy<35?0:1;else if(action==='slide')idx=Math.floor(player.actionTime/.12)%2;else if(action==='crouch')idx=player.actionTime<.13?0:1;return {action,img:sprites[action][idx]}}
 function drawPlayer(){
  const p=player,{action,img}=currentSprite(),scale=Math.max(.72,Math.min(1.18,H/540)),baseline=p.y+p.h,centerX=p.x+p.w/2,jumpHeight=Math.max(0,groundY-baseline),shadowScale=Math.max(.35,1-jumpHeight/(H*.48));
  const shadowY=groundY+4;ctx.save();ctx.globalAlpha=.12*shadowScale;ctx.fillStyle='#071018';ctx.beginPath();ctx.ellipse(centerX,shadowY,31*shadowScale,6*shadowScale,0,0,Math.PI*2);ctx.fill();ctx.restore();if(!img||!img.complete||!img.naturalWidth)return;
  let targetH=88*scale,xOffset=0,yOffset=2;if(action==='jump'){targetH=84*scale;yOffset=0}if(action==='slide'){targetH=64*scale;xOffset=34*scale;yOffset=3}if(action==='crouch'){targetH=61*scale;yOffset=3}
- const targetW=targetH*(img.naturalWidth/img.naturalHeight),drawX=centerX-targetW/2+xOffset,drawY=baseline-targetH+yOffset;ctx.save();ctx.imageSmoothingEnabled=false;if(player.invuln>0&&Math.floor(player.invuln*16)%2===0)ctx.globalAlpha=.38;ctx.drawImage(img,Math.round(drawX),Math.round(drawY),Math.round(targetW),Math.round(targetH));ctx.restore();ctx.imageSmoothingEnabled=true;
+ if(player.facing<0)xOffset=-xOffset;
+ const targetW=targetH*(img.naturalWidth/img.naturalHeight),drawX=centerX-targetW/2+xOffset,drawY=baseline-targetH+yOffset;ctx.save();ctx.imageSmoothingEnabled=false;if(player.invuln>0&&Math.floor(player.invuln*16)%2===0)ctx.globalAlpha=.38;
+ if(player.facing<0){ctx.translate(Math.round(drawX+targetW/2),0);ctx.scale(-1,1);ctx.translate(-Math.round(drawX+targetW/2),0)}
+ ctx.drawImage(img,Math.round(drawX),Math.round(drawY),Math.round(targetW),Math.round(targetH));ctx.restore();ctx.imageSmoothingEnabled=true;
 }
 function render(t){
  ctx.save();if(shake>.1){renderSeed=(renderSeed+1)&255;const sx=((renderSeed*73)%17-8)/8,sy=((renderSeed*37)%17-8)/8;ctx.translate(sx*shake*.5,sy*shake*.5)}drawBackground(t);drawPlatforms();drawHazards();
@@ -543,18 +573,42 @@ function render(t){
 }
 function loop(ts){const dt=Math.min(.033,(ts-last)/1000||0);last=ts;step(dt);render(ts/1000);requestAnimationFrame(loop)}
 async function start(){
- startBtn.disabled=true;startBtn.textContent='사운드 준비중…';await wakeAudio().catch(()=>{});reset();state='playing';overlay.style.display='none';document.querySelector('.title').innerHTML='촉감런<br>ASMR PROTO';document.querySelector('.sub').innerHTML='키보드 발판과 공중 ASMR 발판을 이어 달려.<br><b>빈 곳에 떨어지면 즉시 게임오버!</b>';startBtn.disabled=false;startBtn.textContent='탭해서 시작';
+ startBtn.disabled=true;startBtn.textContent='사운드 준비중…';await wakeAudio().catch(()=>{});reset();state='playing';overlay.style.display='none';document.querySelector('.title').innerHTML='촉감런<br>ASMR PROTO';document.querySelector('.sub').innerHTML=`${levelName}<br><b>← → 직접 이동</b>하면서 정해진 코스를 공략해. 빈 곳은 즉시 추락!`;startBtn.disabled=false;startBtn.textContent='탭해서 시작';
 }
 startBtn.addEventListener('click',e=>{e.stopPropagation();void start()});
-shell.addEventListener('pointerdown',e=>{if(e.target.tagName==='BUTTON')return;e.preventDefault();doJump()},{passive:false});
-addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','KeyS','KeyW','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();if((e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW')&&!e.repeat)doJump();else if((e.code==='ShiftLeft'||e.code==='ShiftRight')&&!e.repeat)startSlide();else if((e.code==='ArrowDown'||e.code==='KeyS')&&!e.repeat)startCrouch()});
-addEventListener('keyup',e=>{if(e.code==='ArrowDown'||e.code==='KeyS')stopCrouch();if(e.code==='ShiftLeft'||e.code==='ShiftRight')stopSlide()});
-addEventListener('blur',()=>{stopCrouch();stopSlide()});
-if(slideTouchBtn){
- slideTouchBtn.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();slideTouchBtn.classList.add('active');startSlide()},{passive:false});
- for(const ev of ['pointerup','pointercancel','pointerleave'])slideTouchBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();slideTouchBtn.classList.remove('active');stopSlide()},{passive:false});
+const isCoarsePointer=matchMedia('(pointer:coarse)').matches;
+if(!isCoarsePointer)shell.addEventListener('pointerdown',e=>{if(e.target.tagName==='BUTTON')return;e.preventDefault();doJump()},{passive:false});
+
+function setMoveLeft(v){moveLeftHeld=v;if(v)moveRightHeld=false}
+function setMoveRight(v){moveRightHeld=v;if(v)moveLeftHeld=false}
+function releaseMoves(){moveLeftHeld=false;moveRightHeld=false}
+
+addEventListener('keydown',e=>{
+ if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyA','KeyD','KeyS','KeyW','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();
+ if(e.code==='ArrowLeft'||e.code==='KeyA')setMoveLeft(true);
+ else if(e.code==='ArrowRight'||e.code==='KeyD')setMoveRight(true);
+ else if((e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW')&&!e.repeat)doJump();
+ else if((e.code==='ShiftLeft'||e.code==='ShiftRight')&&!e.repeat)startSlide();
+ else if((e.code==='ArrowDown'||e.code==='KeyS')&&!e.repeat)startCrouch();
+});
+addEventListener('keyup',e=>{
+ if(e.code==='ArrowLeft'||e.code==='KeyA')moveLeftHeld=false;
+ if(e.code==='ArrowRight'||e.code==='KeyD')moveRightHeld=false;
+ if(e.code==='ArrowDown'||e.code==='KeyS')stopCrouch();
+ if(e.code==='ShiftLeft'||e.code==='ShiftRight')stopSlide();
+});
+addEventListener('blur',()=>{releaseMoves();stopCrouch();stopSlide()});
+
+function bindHold(btn,on,off){
+ if(!btn)return;
+ btn.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();btn.setPointerCapture?.(e.pointerId);btn.classList.add('active');on()},{passive:false});
+ for(const ev of ['pointerup','pointercancel','lostpointercapture'])btn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();btn.classList.remove('active');off()},{passive:false});
 }
-if(crouchTouchBtn){crouchTouchBtn.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();crouchTouchBtn.classList.add('active');startCrouch()},{passive:false});for(const ev of ['pointerup','pointercancel','pointerleave'])crouchTouchBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();crouchTouchBtn.classList.remove('active');stopCrouch()},{passive:false})}
+bindHold(moveLeftBtn,()=>setMoveLeft(true),()=>{moveLeftHeld=false});
+bindHold(moveRightBtn,()=>setMoveRight(true),()=>{moveRightHeld=false});
+if(jumpTouchBtn)jumpTouchBtn.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();jumpTouchBtn.classList.add('active');doJump();setTimeout(()=>jumpTouchBtn.classList.remove('active'),90)},{passive:false});
+bindHold(slideTouchBtn,startSlide,stopSlide);
+bindHold(crouchTouchBtn,startCrouch,stopCrouch);
 const ua=navigator.userAgent||'';
 const isAndroid=/Android/i.test(ua),isKakao=/KAKAOTALK/i.test(ua),isStandalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
 function setInstallHelp(text,show=true){if(!installHelp)return;installHelp.textContent=text;installHelp.classList.toggle('show',show)}
@@ -587,6 +641,6 @@ if(openChromeBtn)openChromeBtn.addEventListener('click',e=>{
  }else setInstallHelp('카카오톡 메뉴에서 “다른 브라우저로 열기”를 선택한 뒤 설치해줘.',true);
 });
 addEventListener('appinstalled',()=>{if(installBtn)installBtn.style.display='none';if(openChromeBtn)openChromeBtn.style.display='none';setInstallHelp('✅ 설치 완료! 홈 화면에서 촉감런을 실행할 수 있어.',true)});
-if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=14-mobile-jump-slide-hold').catch(()=>{}));
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=15-fixed-level-direct-control').catch(()=>{}));
 reset();state='menu';loop(performance.now());
 })();
