@@ -7,6 +7,7 @@ const hpText=document.getElementById('hpText'),hpFill=document.getElementById('h
 const comboN=document.getElementById('comboN'),comboT=document.getElementById('comboT'),toast=document.getElementById('toast'),hint=document.getElementById('hint'),bestText=document.getElementById('bestText'),soundStatus=document.getElementById('soundStatus');
 let W=390,H=844,dpr=1,groundY=680,raf=0,last=0,state='menu',deferredPrompt=null;
 let audio=null,master=null,noiseBuffer=null;
+let keyStepTimer=0,keyStepSide=0,keyFlash=0;
 const G=1700, JUMP=-690;
 const TYPES={
  jelly:{label:'말랑',base:'#b46bff',edge:'#7d38c8',sound:'squish'},
@@ -42,8 +43,22 @@ function playSound(kind,perfect=false){
 }
 function jumpSound(){if(!audio)return;const t=audio.currentTime,o=audio.createOscillator(),g=envGain(t,.002,.07,.18);o.frequency.setValueAtTime(120,t);o.frequency.exponentialRampToValueAtTime(210,t+.07);o.connect(g);o.start(t);o.stop(t+.08)}
 
+// 청축 기계식 스위치 느낌의 짧은 2단 클릭음을 WebAudio로 합성한다.
+// 실제 녹음 샘플이 아니라 클릭 재질을 흉내 낸 프로토타입용 사운드다.
+function playBlueSwitch(accent=false){
+ if(!audio)return; const t=audio.currentTime;
+ // 1) 청축 특유의 높은 클릭 재질
+ const s=audio.createBufferSource(),hp=audio.createBiquadFilter(),bp=audio.createBiquadFilter(),ng=envGain(t,.001,.035,accent?.20:.115);
+ s.buffer=noiseBuffer; hp.type='highpass'; hp.frequency.value=1800; bp.type='bandpass';bp.frequency.value=accent?3900:3300;bp.Q.value=1.4;
+ s.connect(hp);hp.connect(bp);bp.connect(ng);s.start(t);s.stop(t+.055);
+ // 2) 키캡이 바닥을 치는 낮은 '톡'
+ const o=audio.createOscillator(),og=envGain(t+.008,.001,.045,accent?.13:.075);o.type='triangle';o.frequency.setValueAtTime(accent?760:680,t+.008);o.frequency.exponentialRampToValueAtTime(260,t+.052);o.connect(og);o.start(t+.008);o.stop(t+.06);
+ // 3) 아주 짧은 리턴 클릭으로 기계식 스위치 감각을 보강
+ const o2=audio.createOscillator(),g2=envGain(t+.045,.001,.022,accent?.07:.035);o2.type='square';o2.frequency.value=accent?2300:2050;o2.connect(g2);o2.start(t+.045);o2.stop(t+.07);
+}
+
 function reset(){
- player={x:W*.23,y:groundY-56,w:42,h:56,vy:0,onGround:true,rot:0,squash:0};objects=[];particles=[];distance=0;hp=100;combo=0;spawnX=W+100;speed=Math.max(220,W*.58);runTime=0;shake=0;flash=0;
+ player={x:W*.23,y:groundY-56,w:42,h:56,vy:0,onGround:true,rot:0,squash:0};objects=[];particles=[];distance=0;hp=100;combo=0;spawnX=W+100;speed=Math.max(220,W*.58);runTime=0;shake=0;flash=0;keyStepTimer=.05;keyStepSide=0;keyFlash=0;
  for(let i=0;i<6;i++)spawnObject(i<2?W+160+i*180:undefined);
  updateHud();
 }
@@ -72,7 +87,19 @@ function gameOver(){
 function step(dt){
  if(state!=='playing')return;runTime+=dt;distance+=speed*dt*.035;speed=Math.min(330,speed+dt*2.2);hp-=dt*(2.5+speed/280); if(hp<=0){hp=0;updateHud();gameOver();return}
  player.vy+=G*dt;player.y+=player.vy*dt;player.rot+=(player.onGround?0:(player.vy>0?1.8:-1.2))*dt;
- if(player.y+player.h>=groundY){player.y=groundY-player.h;player.vy=0;player.onGround=true;player.rot*=.6}
+ const wasGrounded=player.onGround;
+ if(player.y+player.h>=groundY){
+   player.y=groundY-player.h;player.vy=0;player.onGround=true;player.rot*=.6;
+   if(!wasGrounded){playBlueSwitch(true);keyFlash=.19;keyStepTimer=.14;}
+ }
+ // 땅에서 달릴 때만 자판 발소리가 이어진다. 속도가 오르면 템포도 아주 조금 빨라진다.
+ if(player.onGround){
+   keyStepTimer-=dt;
+   if(keyStepTimer<=0){
+     playBlueSwitch(false); keyStepSide=1-keyStepSide; keyFlash=.12;
+     keyStepTimer=Math.max(.135,.205-(speed-220)*.00020);
+   }
+ }
  for(const o of objects){o.x-=speed*dt;if(o.compress>0)o.compress=Math.max(0,o.compress-dt*2.8);
    if(!o.burst && player.vy>80){const px1=player.x+7,px2=player.x+player.w-7,py=player.y+player.h; if(px2>o.x&&px1<o.x+o.w&&py>=o.y&&py<=o.y+Math.min(28,o.h+12)){
       player.y=o.y-player.h+5; player.vy=-215; player.onGround=false; player.squash=.25; const pc=player.x+player.w/2,oc=o.x+o.w/2;const perfect=Math.abs(pc-oc)<o.w*.22;burst(o,perfect);
@@ -80,13 +107,52 @@ function step(dt){
  }
  objects=objects.filter(o=>o.x>-120);particles=particles.filter(p=>p.life>0);for(const p of particles){p.life-=dt;p.vy+=650*dt;p.x+=p.vx*dt;p.y+=p.vy*dt}
  while(spawnX< W+900){spawnObject()} spawnX-=speed*dt;
- if(player.squash!==0)player.squash*=Math.pow(.02,dt);shake*=Math.pow(.02,dt);flash*=Math.pow(.02,dt);updateHud();
+ if(player.squash!==0)player.squash*=Math.pow(.02,dt);shake*=Math.pow(.02,dt);flash*=Math.pow(.02,dt);keyFlash*=Math.pow(.006,dt);updateHud();
 }
 function roundedRect(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r)}
 function drawBackground(t){
- ctx.fillStyle='#dff4ff';ctx.fillRect(0,0,W,groundY);ctx.fillStyle='#fff3d8';ctx.fillRect(0,groundY,W,H-groundY);
+ ctx.fillStyle='#dff4ff';ctx.fillRect(0,0,W,groundY-8);
+ // 구름
  ctx.fillStyle='#fff';ctx.globalAlpha=.72;for(let i=0;i<5;i++){let x=((i*137-t*10)% (W+180))-80,y=90+(i%3)*90;ctx.beginPath();ctx.ellipse(x,y,38,16,0,0,Math.PI*2);ctx.ellipse(x+31,y+4,28,13,0,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;
- ctx.fillStyle='#ead8a6';ctx.fillRect(0,groundY,W,5);for(let x=-((t*speed*.3)%34);x<W;x+=34){ctx.fillStyle='#e6c88c';ctx.beginPath();ctx.ellipse(x+8,groundY+32,5,2,0,0,Math.PI*2);ctx.fill()}
+
+ // === 무한 키보드 바닥 ===
+ // 키보드 베이스
+ ctx.fillStyle='#20242c';ctx.fillRect(0,groundY-9,W,H-groundY+9);
+ ctx.fillStyle='#141820';ctx.fillRect(0,groundY-8,W,5);
+
+ const labels=['Q','W','E','R','T','Y','U','I','O','P','A','S','D','F','G','H','J','K','L','Z','X','C','V','B','N','M'];
+ const keyW=Math.max(45,W*.13), gap=5, stride=keyW+gap;
+ const scroll=(t*speed*.38)%stride;
+ const rows=[
+   {y:groundY-6,h:39,offset:0,scale:1},
+   {y:groundY+38,h:43,offset:keyW*.42,scale:1.04},
+   {y:groundY+86,h:48,offset:-keyW*.18,scale:1.09},
+   {y:groundY+139,h:52,offset:keyW*.30,scale:1.15}
+ ];
+ for(let r=0;r<rows.length;r++){
+   const row=rows[r],kw=keyW*row.scale,st=kw+gap*row.scale;
+   const rowScroll=(scroll*row.scale)%st;
+   for(let i=-3;i<Math.ceil(W/st)+4;i++){
+     const x=i*st-rowScroll+row.offset;
+     const idx=((i + Math.floor(t*speed*.38/stride) + r*5)%labels.length+labels.length)%labels.length;
+     const isUnderFoot=r===0 && player && player.onGround && x<player.x+player.w*.82 && x+kw>player.x+player.w*.18;
+     const pressed=isUnderFoot && keyFlash>.025;
+     const press=pressed?Math.min(5,2+keyFlash*18):0;
+     // 키 스위치 틈/그림자
+     ctx.fillStyle='#0b0e13';roundedRect(x,row.y+5,kw,row.h,7);ctx.fill();
+     // 키캡 옆면
+     ctx.fillStyle=pressed?'#39414c':'#444d5a';roundedRect(x+1,row.y+2+press,kw-2,row.h-5,7);ctx.fill();
+     // 키캡 윗면
+     ctx.fillStyle=pressed?'#7a8795':'#66717f';roundedRect(x+3,row.y+press,kw-6,row.h-9,6);ctx.fill();
+     ctx.strokeStyle='#8994a2';ctx.globalAlpha=.35;ctx.lineWidth=1;ctx.stroke();ctx.globalAlpha=1;
+     // 키 문자
+     ctx.fillStyle='#e8edf3';ctx.globalAlpha=.82;ctx.font=`700 ${Math.max(9,11*row.scale)}px system-ui,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(labels[idx],x+kw/2,row.y+press+(row.h-9)/2);ctx.globalAlpha=1;
+     // 캐릭터 밑에서 눌린 키는 청축 스위치 컬러를 살짝 노출
+     if(pressed){ctx.fillStyle='#47b8ff';ctx.globalAlpha=Math.min(.9,keyFlash*6);roundedRect(x+kw*.37,row.y+row.h-4,kw*.26,5,2);ctx.fill();ctx.globalAlpha=1;}
+   }
+ }
+ // 바닥 경계 하이라이트
+ ctx.fillStyle='#a6dff8';ctx.globalAlpha=.45;ctx.fillRect(0,groundY-9,W,2);ctx.globalAlpha=1;
 }
 function drawObject(o){
  const T=TYPES[o.type],comp=o.burst?Math.max(.08,o.compress):1-o.compress*.55; ctx.save();ctx.translate(o.x+o.w/2,o.y+o.h);ctx.scale(1+(1-comp)*.35,comp);ctx.translate(-o.w/2,-o.h);
@@ -116,7 +182,7 @@ function render(t){
  if(player)drawPlayer();if(flash>.01){ctx.fillStyle=`rgba(255,255,255,${flash})`;ctx.fillRect(0,0,W,H)}ctx.restore();
 }
 function loop(ts){const dt=Math.min(.033,(ts-last)/1000||0);last=ts;step(dt);render(ts/1000);raf=requestAnimationFrame(loop)}
-function start(){initAudio();if(audio.state==='suspended')audio.resume();reset();state='playing';overlay.style.display='none';document.querySelector('.title').innerHTML='촉감런<br>ASMR PROTO';document.querySelector('.sub').innerHTML='말랑이·왁스볼·뽁뽁이를 밟아 터뜨리며<br><b>최대한 멀리</b> 가는 1시간 프로토타입.';startBtn.textContent='탭해서 시작';doJump()}
+function start(){initAudio();if(audio.state==='suspended')audio.resume();reset();state='playing';overlay.style.display='none';document.querySelector('.title').innerHTML='촉감런<br>ASMR PROTO';document.querySelector('.sub').innerHTML='청축 키보드 위를 달리며 ASMR을 듣고<br>점프해 <b>왁스볼·말랑이·뽁뽁이</b>를 터뜨려봐.';startBtn.textContent='탭해서 시작';doJump()}
 startBtn.addEventListener('click',e=>{e.stopPropagation();start()});shell.addEventListener('pointerdown',e=>{if(e.target.tagName==='BUTTON')return;doJump()});
 addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='ArrowUp')doJump()});
 addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;installBtn.style.display='block'});installBtn.addEventListener('click',async e=>{e.stopPropagation();if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;installBtn.style.display='none'});
