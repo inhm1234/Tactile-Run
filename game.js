@@ -243,6 +243,54 @@ function gameOver(reason='energy'){
  startBtn.textContent='다시 달리기';overlay.style.display='grid';updateHud(true);
 }
 
+function step(dt){
+ if(state!=='playing')return;
+ runTime+=dt;hudClock+=dt;distance+=speed*dt*.035;speed=Math.min(345,speed+dt*1.8);hp=Math.max(0,hp-dt*.08);
+ const now=performance.now()/1000,dx=speed*dt;
+ player.actionTime+=dt;if(player.slideTimer>0)player.slideTimer=Math.max(0,player.slideTimer-dt);
+ for(const p of platforms){p.x-=dx;if(p.pressedTimer>0)p.pressedTimer=Math.max(0,p.pressedTimer-dt)}
+ for(const o of objects){o.x-=dx;if(o.compress>0)o.compress=Math.max(0,o.compress-dt*2.8)}
+ nextX-=dx;
+ keyboardTravel+=dx;
+
+ const prevBottom=player.y+player.h,wasGrounded=player.onGround,prevSupport=lastSupportId;
+ player.vy+=G*physicsScale*dt;player.y+=player.vy*dt;player.onGround=false;lastSupportId=null;
+ let landedOnObject=false;
+ if(player.vy>=0){
+  const px1=player.x+8,px2=player.x+player.w-8,newBottom=player.y+player.h;
+  for(let i=0;i<objects.length;i++){
+   const o=objects[i];if(o.burst)continue;
+   if(px2>o.x&&px1<o.x+o.w&&prevBottom<=o.y+10&&newBottom>=o.y){
+    player.y=o.y-player.h+3;player.vy=OBJECT_BOUNCE*physicsScale;player.onGround=false;lastSteppedKey=null;setAction('jump');
+    const pc=player.x+player.w/2,oc=o.x+o.w/2;burst(o,Math.abs(pc-oc)<o.w*.23);landedOnObject=true;break;
+   }
+  }
+  if(!landedOnObject){
+   for(let i=0;i<platforms.length;i++){
+    const p=platforms[i];if(px2<=p.x+4||px1>=p.x+p.w-4)continue;
+    if(prevBottom<=p.y+9&&newBottom>=p.y){
+     player.y=p.y-player.h;player.vy=0;player.onGround=true;lastSupportId=p.id;coyoteUntil=now+COYOTE;
+     if(player.slideTimer>0)setAction('slide');else if(player.crouchHeld)setAction('crouch');else setAction('run');
+     triggerKeyboardContact(p,!wasGrounded||prevSupport!==p.id);break;
+    }
+   }
+  }
+ }
+ if(!player.onGround&&!landedOnObject){
+  setAction('jump');
+  if(wasGrounded){coyoteUntil=now+COYOTE;lastSteppedKey=null}
+ }
+ if(player.onGround&&jumpBufferUntil>=now)executeJump();
+ else if(jumpBufferUntil&&jumpBufferUntil<now)jumpBufferUntil=0;
+
+ let pw=0;for(let i=0;i<platforms.length;i++)if(platforms[i].x+platforms[i].w>-180)platforms[pw++]=platforms[i];platforms.length=pw;
+ let ow=0;for(let i=0;i<objects.length;i++)if(objects[i].x+objects[i].w>-160)objects[ow++]=objects[i];objects.length=ow;
+ let qw=0;for(let i=0;i<particles.length;i++){const p=particles[i];p.life-=dt;if(p.life>0){p.vy+=620*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;particles[qw++]=p}}particles.length=qw;
+ while(nextX<W+1100)generateSection();
+ if(player.y>H+70){gameOver('fall');return}
+ shake*=Math.pow(.025,dt);flash*=Math.pow(.025,dt);updateHud();
+}
+
 function drawBackground(t){
  ctx.fillStyle=skyGradient||'#dff4ff';ctx.fillRect(0,0,W,H);
  ctx.fillStyle='rgba(255,255,255,.72)';for(let i=0;i<5;i++){const x=((i*241-t*9)%(W+240))-110,y=70+(i%3)*72;ctx.beginPath();ctx.ellipse(x,y,38,15,0,0,Math.PI*2);ctx.ellipse(x+31,y+3,26,12,0,0,Math.PI*2);ctx.fill()}
@@ -314,6 +362,6 @@ if(openChromeBtn)openChromeBtn.addEventListener('click',e=>{
  }else setInstallHelp('카카오톡 메뉴에서 “다른 브라우저로 열기”를 선택한 뒤 설치해줘.',true);
 });
 addEventListener('appinstalled',()=>{if(installBtn)installBtn.style.display='none';if(openChromeBtn)openChromeBtn.style.display='none';setInstallHelp('✅ 설치 완료! 홈 화면에서 촉감런을 실행할 수 있어.',true)});
-if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=11-gap-runner').catch(()=>{}));
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=11.1-step-hotfix').catch(()=>{}));
 reset();state='menu';loop(performance.now());
 })();

@@ -1,6 +1,6 @@
-const CACHE='tactile-run-v11-gap-runner';
+const CACHE='tactile-run-v11.1-step-hotfix';
 const ASSETS=[
- './','./index.html','./game.js?v=11-gap-runner','./manifest.webmanifest?v=11','./icons/icon-192.png','./icons/icon-512.png',
+ './','./index.html','./game.js?v=11.1-step-hotfix','./manifest.webmanifest?v=11.1','./icons/icon-192.png','./icons/icon-512.png',
  './KEY_1.wav','./KEY_2.wav','./KEY_3.wav','./KEY_4.wav','./KEY_5.wav',
  './wax1.wav','./wax2.wav','./wax3.wav','./wax4.wav','./wax5.wav',
  './malrang1.wav','./malrang2.wav','./malrang3.wav',
