@@ -11,9 +11,16 @@ let keyFlash=0,keyboardTravel=0,lastSteppedKey=null,pressedKeyId=null;
 
 const SAMPLE_FILES={
  keyboard:['./keyboard1.wav','./keyboard2.wav','./keyboard3.wav','./keyboard4.wav'],
- wax:['./wax1.wav','./wax2.wav','./wax3.wav','./wax4.wav','./wax5.wav']
+ wax:['./wax1.wav','./wax2.wav','./wax3.wav','./wax4.wav','./wax5.wav'],
+ jelly:['./malrang1.wav','./malrang2.wav','./malrang3.wav'],
+ bubble:['./bubble1.wav','./bubble2.wav','./bubble3.wav','./bubble4.wav']
 };
-const sampleState={keyboard:{last:-1,pool:[],cursor:0},wax:{last:-1,pool:[],cursor:0}};
+const sampleState={
+ keyboard:{last:-1,pool:[],cursor:0},
+ wax:{last:-1,pool:[],cursor:0},
+ jelly:{last:-1,pool:[],cursor:0},
+ bubble:{last:-1,pool:[],cursor:0}
+};
 function prepareSamplePool(kind,size){
  const st=sampleState[kind]; if(st.pool.length)return;
  for(let i=0;i<size;i++){const a=new Audio();a.preload='auto';a.playsInline=true;st.pool.push(a)}
@@ -25,11 +32,11 @@ function randomSampleIndex(kind){
  st.last=idx;return idx;
 }
 function playRecordedSample(kind,volume=1){
- const st=sampleState[kind],files=SAMPLE_FILES[kind];if(!st.pool.length)prepareSamplePool(kind,kind==='keyboard'?4:3);
+ const st=sampleState[kind],files=SAMPLE_FILES[kind];if(!st.pool.length)prepareSamplePool(kind,kind==='keyboard'||kind==='bubble'?4:3);
  const a=st.pool[st.cursor++%st.pool.length];a.pause();a.src=files[randomSampleIndex(kind)];a.currentTime=0;a.volume=Math.max(0,Math.min(1,volume));a.playbackRate=1;
  const pr=a.play();if(pr&&pr.catch)pr.catch(()=>{});
 }
-prepareSamplePool('keyboard',4);prepareSamplePool('wax',3);
+prepareSamplePool('keyboard',4);prepareSamplePool('wax',3);prepareSamplePool('jelly',3);prepareSamplePool('bubble',4);
 
 const SPRITE_FILES={
  run:['./sprites/run1.png','./sprites/run2.png','./sprites/run3.png','./sprites/run4.png'],
@@ -130,7 +137,10 @@ function stopCrouch(){
 }
 function burst(o,perfect){
  if(o.burst)return;o.burst=true;o.hit=true;o.compress=1;combo=perfect?combo+1:Math.max(1,combo);hp=Math.min(100,hp+(perfect?5:2));shake=perfect?8:4;flash=perfect?.22:.08;
- if(o.type==='wax')playRecordedSample('wax',perfect?.95:.84);else playSound(TYPES[o.type].sound,perfect);
+ if(o.type==='wax')playRecordedSample('wax',perfect?.95:.84);
+ else if(o.type==='jelly')playRecordedSample('jelly',perfect?.92:.80);
+ else if(o.type==='bubble')playRecordedSample('bubble',perfect?.92:.82);
+ else playSound(TYPES[o.type].sound,perfect);
  if(navigator.vibrate)navigator.vibrate(perfect?[14,18,20]:10);
  const cx=o.x+o.w/2,cy=o.y+o.h/2;for(let i=0;i<(perfect?18:11);i++){let a=Math.random()*Math.PI*2,s=70+Math.random()*240;particles.push({x:cx,y:cy,vx:Math.cos(a)*s,vy:Math.sin(a)*s-100,r:2+Math.random()*6,life:.35+Math.random()*.35,color:TYPES[o.type].base})}
  showToast(perfect?'PERFECT!':TYPES[o.type].label+'!');

@@ -1,8 +1,10 @@
-const CACHE='tactile-run-v6-narrow-keys-contact-once';
+const CACHE='tactile-run-v7-object-real-audio';
 const ASSETS=[
- './','./index.html','./game.js?v=6-narrow-keys-contact-once','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png',
+ './','./index.html','./game.js?v=7-object-real-audio','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png',
  './keyboard1.wav','./keyboard2.wav','./keyboard3.wav','./keyboard4.wav',
  './wax1.wav','./wax2.wav','./wax3.wav','./wax4.wav','./wax5.wav',
+ './malrang1.wav','./malrang2.wav','./malrang3.wav',
+ './bubble1.wav','./bubble2.wav','./bubble3.wav','./bubble4.wav',
  './sprites/run1.png','./sprites/run2.png','./sprites/run3.png','./sprites/run4.png',
  './sprites/jump1.png','./sprites/jump2.png','./sprites/slide1.png','./sprites/slide2.png','./sprites/crouch1.png','./sprites/crouch2.png'
 ];
