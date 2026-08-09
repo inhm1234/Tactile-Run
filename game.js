@@ -8,6 +8,32 @@ const comboN=document.getElementById('comboN'),comboT=document.getElementById('c
 let W=960,H=540,dpr=1,groundY=370,physicsScale=1,raf=0,last=0,state='menu',deferredPrompt=null;
 let audio=null,master=null,noiseBuffer=null;
 let keyStepTimer=0,keyStepSide=0,keyFlash=0;
+
+// 사용자가 제공한 실제 ASMR WAV 샘플.
+// 같은 소리가 연속으로 반복되지 않도록 직전 인덱스는 피해서 랜덤 선택한다.
+const SAMPLE_FILES={
+ keyboard:['./keyboard1.wav','./keyboard2.wav','./keyboard3.wav','./keyboard4.wav'],
+ wax:['./wax1.wav','./wax2.wav','./wax3.wav','./wax4.wav','./wax5.wav']
+};
+const sampleState={keyboard:{last:-1,pool:[],cursor:0},wax:{last:-1,pool:[],cursor:0}};
+function prepareSamplePool(kind,size){
+ const st=sampleState[kind]; if(st.pool.length)return;
+ for(let i=0;i<size;i++){const a=new Audio();a.preload='auto';a.playsInline=true;st.pool.push(a)}
+ // 브라우저가 게임 시작 전에 파일을 미리 받아둘 수 있게 각 소스를 한 번 예열한다.
+ for(const src of SAMPLE_FILES[kind]){const a=new Audio(src);a.preload='auto';a.load()}
+}
+function randomSampleIndex(kind){
+ const files=SAMPLE_FILES[kind],st=sampleState[kind]; let idx=(Math.random()*files.length)|0;
+ if(files.length>1 && idx===st.last) idx=(idx+1+((Math.random()*(files.length-1))|0))%files.length;
+ st.last=idx; return idx;
+}
+function playRecordedSample(kind,volume=1){
+ const st=sampleState[kind],files=SAMPLE_FILES[kind]; if(!st.pool.length)prepareSamplePool(kind,kind==='keyboard'?4:3);
+ const a=st.pool[st.cursor++%st.pool.length];
+ a.pause(); a.src=files[randomSampleIndex(kind)]; a.currentTime=0; a.volume=Math.max(0,Math.min(1,volume)); a.playbackRate=1;
+ const pr=a.play(); if(pr&&pr.catch)pr.catch(()=>{});
+}
+prepareSamplePool('keyboard',4);prepareSamplePool('wax',3);
 const G=1700, JUMP=-690;
 const TYPES={
  jelly:{label:'말랑',base:'#b46bff',edge:'#7d38c8',sound:'squish'},
@@ -26,7 +52,7 @@ addEventListener('resize',resize);resize();
 function initAudio(){
  if(audio)return; audio=new (window.AudioContext||window.webkitAudioContext)(); master=audio.createGain();master.gain.value=.22;master.connect(audio.destination);
  const len=audio.sampleRate*.35;noiseBuffer=audio.createBuffer(1,len,audio.sampleRate);const d=noiseBuffer.getChannelData(0);for(let i=0;i<len;i++)d[i]=Math.random()*2-1;
- soundStatus.textContent='🔊 ASMR 사운드 ON';
+ soundStatus.textContent='🔊 실제 ASMR 샘플 ON';
 }
 function envGain(t0,attack,decay,peak=.8){const g=audio.createGain();g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(peak,t0+attack);g.gain.exponentialRampToValueAtTime(.001,t0+attack+decay);g.connect(master);return g}
 function playSound(kind,perfect=false){
@@ -45,7 +71,7 @@ function jumpSound(){if(!audio)return;const t=audio.currentTime,o=audio.createOs
 
 // 청축 기계식 스위치 느낌의 짧은 2단 클릭음을 WebAudio로 합성한다.
 // 실제 녹음 샘플이 아니라 클릭 재질을 흉내 낸 프로토타입용 사운드다.
-function playBlueSwitch(accent=false){
+function playBlueSwitchSynth(accent=false){
  if(!audio)return; const t=audio.currentTime;
  // 1) 청축 특유의 높은 클릭 재질
  const s=audio.createBufferSource(),hp=audio.createBiquadFilter(),bp=audio.createBiquadFilter(),ng=envGain(t,.001,.035,accent?.20:.115);
@@ -55,6 +81,11 @@ function playBlueSwitch(accent=false){
  const o=audio.createOscillator(),og=envGain(t+.008,.001,.045,accent?.13:.075);o.type='triangle';o.frequency.setValueAtTime(accent?760:680,t+.008);o.frequency.exponentialRampToValueAtTime(260,t+.052);o.connect(og);o.start(t+.008);o.stop(t+.06);
  // 3) 아주 짧은 리턴 클릭으로 기계식 스위치 감각을 보강
  const o2=audio.createOscillator(),g2=envGain(t+.045,.001,.022,accent?.07:.035);o2.type='square';o2.frequency.value=accent?2300:2050;o2.connect(g2);o2.start(t+.045);o2.stop(t+.07);
+}
+
+// 발이 키캡을 밟을 때 keyboard1~4.wav 중 하나를 랜덤 재생한다.
+function playBlueSwitch(accent=false){
+ try{playRecordedSample('keyboard',accent?.78:.52)}catch(_){playBlueSwitchSynth(accent)}
 }
 
 function reset(){
@@ -73,7 +104,7 @@ function doJump(){
  if(player.onGround){player.vy=JUMP*physicsScale;player.onGround=false;player.squash=-.15;jumpSound();hint.style.opacity=.15; if(navigator.vibrate)navigator.vibrate(8)}
 }
 function burst(o,perfect){
- if(o.burst)return;o.burst=true;o.hit=true;o.compress=1;combo=perfect?combo+1:Math.max(1,combo);hp=Math.min(100,hp+(perfect?5:2));shake=perfect?8:4;flash=perfect?.22:.08;playSound(TYPES[o.type].sound,perfect);
+ if(o.burst)return;o.burst=true;o.hit=true;o.compress=1;combo=perfect?combo+1:Math.max(1,combo);hp=Math.min(100,hp+(perfect?5:2));shake=perfect?8:4;flash=perfect?.22:.08;if(o.type==='wax'){playRecordedSample('wax',perfect?.95:.84)}else{playSound(TYPES[o.type].sound,perfect);}
  if(navigator.vibrate)navigator.vibrate(perfect?[14,18,20]:10);
  const cx=o.x+o.w/2,cy=o.y+o.h/2;for(let i=0;i<(perfect?18:11);i++){let a=Math.random()*Math.PI*2,s=70+Math.random()*240;particles.push({x:cx,y:cy,vx:Math.cos(a)*s,vy:Math.sin(a)*s-100,r:2+Math.random()*6,life:.35+Math.random()*.35,color:TYPES[o.type].base})}
  showToast(perfect?'PERFECT!':TYPES[o.type].label+'!');
