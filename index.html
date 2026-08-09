@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="촉감런" />
-  <link rel="manifest" href="manifest.webmanifest?v=9" />
+  <link rel="manifest" href="manifest.webmanifest?v=11" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>촉감런 - ASMR Prototype</title>
   <style>
@@ -103,17 +103,17 @@
   <div id="controlsGuide" class="glass" aria-label="키 조작 안내">
     <span><kbd>↑</kbd><kbd>SPACE</kbd> 점프</span>
     <span><kbd>SHIFT</kbd> 슬라이딩</span>
-    <span><kbd>↓</kbd><kbd>S</kbd> 웅크리기</span>
+    <span><kbd>↓</kbd><kbd>S</kbd> 웅크리기</span><span>⚠️ 빈 곳 = 추락</span>
   </div>
   <div id="combo"><div class="comboN" id="comboN"></div><div class="comboT" id="comboT"></div></div>
   <div id="toast">PERFECT!</div>
-  <div id="hint">화면 탭 = 점프 · PC에서는 상단 키 조작도 가능</div>
+  <div id="hint">화면 터치 = 즉시 점프 · 빈 곳에 떨어지면 게임오버</div>
   <div id="soundStatus">🔊 실제 ASMR 샘플 ON</div>
   <div id="overlay">
     <div id="card" class="glass">
       <div class="logo"><img src="sprites/run1.png" alt="촉감런 캐릭터"></div>
       <div class="title">촉감런 ASMR PROTO</div>
-      <div class="sub">키보드 위를 달리며 ASMR을 듣고 점프해 <b>왁스·말랑이·뽁뽁이</b>를 터뜨려봐.</div>
+      <div class="sub">키보드 발판을 이어 달리고 공중의 <b>왁스·말랑이·뽁뽁이</b>를 밟아 건너가. 빈 곳에 떨어지면 즉시 게임오버!</div>
       <div class="chips"><span class="chip">🟣 말랑</span><span class="chip">🟠 왁스</span><span class="chip">🔵 뽁뽁</span></div>
       <div id="actionRow">
         <button id="startBtn">탭해서 시작</button>
@@ -125,6 +125,6 @@
     </div>
   </div>
 </div></div>
-<script src="game.js?v=10.1-hotfix"></script>
+<script src="game.js?v=11-gap-runner"></script>
 </body>
 </html>

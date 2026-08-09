@@ -8,8 +8,9 @@ const comboN=document.getElementById('comboN'),comboT=document.getElementById('c
 
 let W=960,H=540,dpr=1,groundY=370,physicsScale=1,last=0,state='menu',deferredPrompt=null;
 let audio=null,master=null,noiseBuffer=null,audioReady=false,audioLoadPromise=null;
-let keyFlash=0,keyboardTravel=0,lastSteppedKey=null,pressedKeyId=null,hudClock=0;
-let keyboardCache=[],objectSprites={},renderSeed=0,skyGradient=null,plateGradient=null;
+let keyboardTravel=0,lastSteppedKey=null,hudClock=0;
+let objectSprites={},renderSeed=0,skyGradient=null,abyssGradient=null;
+let platforms=[],nextX=0,platformSeq=0,sectionSeq=0,jumpBufferUntil=0,coyoteUntil=0,lastSupportId=null;
 
 const SAMPLE_FILES={
  keyboard:['./KEY_1.wav','./KEY_2.wav','./KEY_3.wav','./KEY_4.wav','./KEY_5.wav'],
@@ -69,7 +70,7 @@ const SPRITE_FILES={
 const sprites={run:[],jump:[],slide:[],crouch:[]};
 for(const [action,files] of Object.entries(SPRITE_FILES))for(const src of files){const im=new Image();im.decoding='async';im.src=src;sprites[action].push(im)}
 
-const G=1700,JUMP=-690,TYPE_KEYS=['jelly','wax','bubble'];
+const G=2250,JUMP=-790,OBJECT_BOUNCE=-510,COYOTE=.115,JUMP_BUFFER=.145,TYPE_KEYS=['jelly','wax','bubble'];
 const TYPES={
  jelly:{label:'말랑',base:'#8b54cf'},
  wax:{label:'왁스',base:'#dd812b'},
@@ -93,15 +94,6 @@ function drawKeyCap(c,x,y,w,h,label,pressed=false){
 }
 function keyboardMetrics(){const keyW=Math.max(45,W*.13)*.60,gap=5,stride=keyW+gap;return {keyW,gap,stride}}
 const KEY_LABELS=['Q','W','E','R','T','Y','U','I','O','P','A','S','D','F','G','H','J','K','L','Z','X','C','V','B','N','M'];
-const KEY_ROWS=[{h:39,offset:0,scale:1},{h:43,offset:.42,scale:1.04},{h:48,offset:-.18,scale:1.09},{h:52,offset:.30,scale:1.15}];
-function rebuildKeyboardCache(){
- const {keyW,gap}=keyboardMetrics();keyboardCache=[];
- KEY_ROWS.forEach((row,r)=>{
-  const kw=keyW*row.scale,st=kw+gap*row.scale,count=Math.max(18,Math.ceil((W+st*3)/st)),tw=Math.ceil(st*count),th=row.h+12,c=makeCanvas(tw,th),g=c.getContext('2d');
-  for(let i=0;i<count;i++)drawKeyCap(g,i*st,0,kw,row.h,KEY_LABELS[(i+r*5)%KEY_LABELS.length],false);
-  keyboardCache.push({canvas:c,st,tw,row,kw});
- });
-}
 function buildObjectSprites(){
  const scale=2;
  function create(w,h,draw){const c=makeCanvas(w*scale,h*scale),g=c.getContext('2d');g.scale(scale,scale);draw(g,w,h);return c}
@@ -138,13 +130,14 @@ function buildObjectSprites(){
 let resizeRaf=0;
 function resize(){
  const r=shell.getBoundingClientRect();W=Math.max(1,r.width);H=Math.max(1,r.height);
- const coarse=matchMedia('(pointer:coarse)').matches;dpr=Math.min(coarse?1.10:1.50,devicePixelRatio||1);
+ const coarse=matchMedia('(pointer:coarse)').matches;dpr=Math.min(coarse?1.08:1.45,devicePixelRatio||1);
  canvas.width=Math.max(1,Math.round(W*dpr));canvas.height=Math.max(1,Math.round(H*dpr));ctx.setTransform(dpr,0,0,dpr,0,0);ctx.imageSmoothingEnabled=true;
- groundY=H*.69;physicsScale=Math.max(.52,Math.min(1.05,H/620));
- skyGradient=ctx.createLinearGradient(0,0,0,groundY);skyGradient.addColorStop(0,'#dff4ff');skyGradient.addColorStop(1,'#c8ecfa');
- plateGradient=ctx.createLinearGradient(0,groundY-10,0,H);plateGradient.addColorStop(0,'#252b33');plateGradient.addColorStop(.35,'#171c23');plateGradient.addColorStop(1,'#0d1117');
- rebuildKeyboardCache();buildObjectSprites();
- if(player&&player.onGround)player.y=groundY-player.h;
+ groundY=H*.73;physicsScale=Math.max(.55,Math.min(1.02,H/610));
+ skyGradient=ctx.createLinearGradient(0,0,0,H);skyGradient.addColorStop(0,'#dff4ff');skyGradient.addColorStop(.62,'#c9ebf8');skyGradient.addColorStop(1,'#9bc9da');
+ abyssGradient=ctx.createLinearGradient(0,groundY,0,H);abyssGradient.addColorStop(0,'rgba(35,50,60,.10)');abyssGradient.addColorStop(.35,'rgba(28,38,46,.32)');abyssGradient.addColorStop(1,'rgba(9,14,19,.88)');
+ buildObjectSprites();
+ for(const p of platforms)buildPlatformSprite(p);
+ if(player&&player.onGround&&lastSupportId){const p=platforms.find(x=>x.id===lastSupportId);if(p)player.y=p.y-player.h}
 }
 function syncViewport(){
  const vv=window.visualViewport;
@@ -160,22 +153,75 @@ if(window.visualViewport){visualViewport.addEventListener('resize',syncViewport,
 if('ResizeObserver' in window)new ResizeObserver(()=>{cancelAnimationFrame(resizeRaf);resizeRaf=requestAnimationFrame(resize)}).observe(shell);
 syncViewport();
 
-function groundKeyUnderPlayer(){
- if(!player||!player.onGround)return null;const {keyW,stride}=keyboardMetrics(),travel=keyboardTravel,cycle=Math.floor(travel/stride),scroll=travel-cycle*stride,footX=player.x+player.w*.50,localIndex=Math.floor((footX+scroll)/stride),keyX=localIndex*stride-scroll;
- if(footX<keyX||footX>keyX+keyW)return null;return localIndex+cycle;
+function buildPlatformSprite(p){
+ const h=Math.max(116,Math.min(150,H*.29)),c=makeCanvas(p.w,h),g=c.getContext('2d'),{keyW,gap,stride}=keyboardMetrics();
+ const deck=g.createLinearGradient(0,0,0,h);deck.addColorStop(0,'#343b45');deck.addColorStop(.28,'#20262e');deck.addColorStop(1,'#0d1117');g.fillStyle=deck;rr(g,0,4,p.w,h-4,10);g.fill();
+ g.fillStyle='rgba(255,255,255,.11)';g.fillRect(4,7,p.w-8,2);
+ const rows=[{y:0,off:0,s:1,h:39},{y:42,off:.36,s:1.03,h:43},{y:89,off:-.14,s:1.08,h:47}];
+ for(let r=0;r<rows.length;r++){
+  const row=rows[r],kw=keyW*row.s,st=kw+gap*row.s,off=row.off*keyW;
+  for(let x=off,i=0;x<p.w+kw;x+=st,i++)drawKeyCap(g,x,row.y,kw,row.h,KEY_LABELS[(i+r*5+p.seed)%KEY_LABELS.length],false);
+ }
+ p.img=c;p.visualH=h;
 }
-function triggerKeyboardContact(accent=false){const keyId=groundKeyUnderPlayer();if(keyId!==null&&keyId!==lastSteppedKey){lastSteppedKey=keyId;pressedKeyId=keyId;keyFlash=.12;playBlueSwitch(accent)}}
+function addKeyboardPlatform(x,keyCount){
+ const {keyW,gap,stride}=keyboardMetrics(),w=Math.max(stride*keyCount-gap,keyW),p={id:'k'+(++platformSeq),x,y:groundY,w,keyCount,seed:(platformSeq*7)%KEY_LABELS.length,img:null,visualH:140,pressedIndex:-1,pressedTimer:0};
+ buildPlatformSprite(p);platforms.push(p);return p;
+}
+function addAirObject(x,type,lift=82){
+ const w=type==='bubble'?82:68+(Math.random()*12),h=type==='jelly'?38:type==='wax'?31:29;
+ const o={x,y:groundY-lift,w,h,type,hit:false,burst:false,compress:0,air:true};objects.push(o);return o;
+}
+function maybeAddGroundTarget(p){
+ if(Math.random()>.38||p.w<230)return;
+ const type=TYPE_KEYS[(Math.random()*TYPE_KEYS.length)|0],w=type==='bubble'?82:66+Math.random()*12,h=type==='jelly'?38:type==='wax'?31:29;
+ const x=p.x+p.w*(.56+Math.random()*.20);objects.push({x,y:p.y-h,w,h,type,hit:false,burst:false,compress:0,air:false});
+}
+function generateSection(){
+ const {stride}=keyboardMetrics();sectionSeq++;
+ const airBridge=sectionSeq%3===0||Math.random()<.42;
+ if(airBridge){
+  const count=3+((Math.random()*2)|0),step=Math.max(86,Math.min(112,W*.105)),lead=Math.max(62,Math.min(105,W*.08));
+  nextX+=lead;
+  for(let i=0;i<count;i++){
+   const type=TYPE_KEYS[(Math.random()*TYPE_KEYS.length)|0];
+   const lift=72+(i%2)*16+Math.random()*8;
+   addAirObject(nextX+i*step,type,lift);
+  }
+  nextX+=count*step+Math.max(55,W*.045);
+  const p=addKeyboardPlatform(nextX,4+((Math.random()*4)|0));nextX=p.x+p.w;maybeAddGroundTarget(p);
+ }else{
+  nextX+=Math.max(72,Math.min(145,74+Math.random()*80));
+  const p=addKeyboardPlatform(nextX,4+((Math.random()*5)|0));nextX=p.x+p.w;maybeAddGroundTarget(p);
+ }
+}
+function platformUnderFoot(){
+ const footX=player.x+player.w*.50;
+ for(let i=0;i<platforms.length;i++){const p=platforms[i];if(footX>=p.x&&footX<=p.x+p.w&&Math.abs((player.y+player.h)-p.y)<7)return p}
+ return null;
+}
+function triggerKeyboardContact(p,accent=false){
+ if(!p)return;const {keyW,stride}=keyboardMetrics(),footX=player.x+player.w*.50,local=footX-p.x,idx=Math.floor(local/stride),kx=idx*stride;
+ if(idx<0||local<kx||local>kx+keyW)return;
+ const keyId=p.id+':'+idx;if(keyId===lastSteppedKey)return;
+ lastSteppedKey=keyId;p.pressedIndex=idx;p.pressedTimer=.105;playBlueSwitch(accent);
+}
 function setAction(action){if(!player||player.action===action)return;player.action=action;player.actionTime=0}
 function reset(){
- player={x:W*.16,y:groundY-68,w:58,h:68,vy:0,onGround:true,action:'run',actionTime:0,slideTimer:0,crouchHeld:false};objects=[];particles=[];distance=0;hp=100;combo=0;spawnX=W+100;speed=Math.max(220,Math.min(315,H*.60));runTime=0;shake=0;flash=0;keyFlash=0;keyboardTravel=0;lastSteppedKey=null;pressedKeyId=null;hudClock=0;
- for(let i=0;i<6;i++)spawnObject(i<2?W+160+i*180:undefined);updateHud(true);
-}
-function spawnObject(xOverride){
- const type=TYPE_KEYS[(Math.random()*TYPE_KEYS.length)|0],w=type==='bubble'?82:64+Math.random()*18,h=type==='jelly'?38:type==='wax'?31:29,gap=120+Math.random()*120,x=xOverride??Math.max(W+80,spawnX+gap);
- objects.push({x,y:groundY-h,w,h,type,hit:false,burst:false,compress:0});spawnX=x+w;
+ platforms=[];objects=[];particles=[];distance=0;hp=100;combo=0;speed=Math.max(235,Math.min(320,H*.64));runTime=0;shake=0;flash=0;keyboardTravel=0;lastSteppedKey=null;hudClock=0;platformSeq=0;sectionSeq=0;jumpBufferUntil=0;coyoteUntil=0;lastSupportId=null;
+ const {stride}=keyboardMetrics(),startKeys=Math.max(7,Math.ceil((W*.72+150)/stride));
+ const first=addKeyboardPlatform(-120,startKeys);nextX=first.x+first.w;
+ player={x:W*.16,y:first.y-68,w:58,h:68,vy:0,onGround:true,action:'run',actionTime:0,slideTimer:0,crouchHeld:false};lastSupportId=first.id;coyoteUntil=performance.now()/1000+COYOTE;triggerKeyboardContact(first,true);
+ while(nextX<W+1100)generateSection();updateHud(true);
 }
 async function wakeAudio(){await initAudio()}
-function doJump(){if(state!=='playing'||!player.onGround)return;void wakeAudio();player.slideTimer=0;player.crouchHeld=false;player.vy=JUMP*physicsScale;player.onGround=false;setAction('jump');jumpSound();hint.style.opacity=.15;if(navigator.vibrate)navigator.vibrate(8)}
+function executeJump(){
+ player.slideTimer=0;player.crouchHeld=false;player.vy=JUMP*physicsScale;player.onGround=false;lastSupportId=null;lastSteppedKey=null;jumpBufferUntil=0;coyoteUntil=0;setAction('jump');jumpSound();hint.style.opacity=.15;if(navigator.vibrate)navigator.vibrate(7);
+}
+function doJump(){
+ if(state!=='playing'||!player)return;void wakeAudio();const now=performance.now()/1000;jumpBufferUntil=now+JUMP_BUFFER;
+ if(player.onGround||now<=coyoteUntil)executeJump();
+}
 function doSlide(){if(state!=='playing'||!player.onGround)return;void wakeAudio();player.crouchHeld=false;player.slideTimer=.55;setAction('slide');hint.style.opacity=.15;if(navigator.vibrate)navigator.vibrate(7)}
 function startCrouch(){if(state!=='playing')return;void wakeAudio();player.crouchHeld=true;player.slideTimer=0;if(player.onGround)setAction('crouch')}
 function stopCrouch(){if(!player)return;player.crouchHeld=false;if(state==='playing'&&player.onGround&&player.slideTimer<=0)setAction('run')}
@@ -190,33 +236,27 @@ function showToast(text){toast.textContent=text;toast.classList.remove('show');v
 function updateHud(force=false){
  if(!force&&hudClock<.075)return;hudClock=0;hpText.textContent=Math.max(0,Math.ceil(hp));hpFill.style.transform=`scaleX(${Math.max(0,hp)/100})`;metersEl.textContent=Math.floor(distance);comboN.textContent=combo>=2?`×${combo}`:'';comboT.textContent=combo>=2?'CRUNCH COMBO':'';
 }
-function gameOver(){state='over';const m=Math.floor(distance);if(m>best){best=m;localStorage.setItem('tactileBest',best)}bestText.textContent=`BEST ${best}m`;document.querySelector('.title').innerHTML=`${m}m<br>달렸어!`;document.querySelector('.sub').innerHTML=`최고 콤보를 이어서 더 멀리 가보자.<br><b>정중앙 착지 = PERFECT + 체력 회복</b>`;startBtn.textContent='다시 달리기';overlay.style.display='grid';updateHud(true)}
-
-function step(dt){
- if(state!=='playing')return;runTime+=dt;hudClock+=dt;distance+=speed*dt*.035;speed=Math.min(330,speed+dt*2.2);hp-=dt*(2.5+speed/280);if(hp<=0){hp=0;gameOver();return}
- player.actionTime+=dt;if(player.slideTimer>0)player.slideTimer=Math.max(0,player.slideTimer-dt);player.vy+=G*physicsScale*dt;player.y+=player.vy*dt;
- const wasGrounded=player.onGround;keyboardTravel+=speed*dt*.38;if(player.y+player.h>=groundY){player.y=groundY-player.h;player.vy=0;player.onGround=true}else{player.onGround=false;lastSteppedKey=null}
- if(player.onGround){if(player.slideTimer>0)setAction('slide');else if(player.crouchHeld)setAction('crouch');else setAction('run');triggerKeyboardContact(!wasGrounded||player.action==='slide')}else setAction('jump');
- for(let i=0;i<objects.length;i++){
-  const o=objects[i];o.x-=speed*dt;if(o.compress>0)o.compress=Math.max(0,o.compress-dt*2.8);
-  if(!o.burst&&player.vy>80){const px1=player.x+7,px2=player.x+player.w-7,py=player.y+player.h;if(px2>o.x&&px1<o.x+o.w&&py>=o.y&&py<=o.y+Math.min(29,o.h+12)){player.y=o.y-player.h+5;player.vy=-215;player.onGround=false;setAction('jump');const pc=player.x+player.w/2,oc=o.x+o.w/2;burst(o,Math.abs(pc-oc)<o.w*.22)}}
- }
- let ow=0;for(let i=0;i<objects.length;i++)if(objects[i].x>-130)objects[ow++]=objects[i];objects.length=ow;
- let pw=0;for(let i=0;i<particles.length;i++){const p=particles[i];p.life-=dt;if(p.life>0){p.vy+=620*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;particles[pw++]=p}}particles.length=pw;
- while(spawnX<W+900)spawnObject();spawnX-=speed*dt;shake*=Math.pow(.025,dt);flash*=Math.pow(.025,dt);keyFlash*=Math.pow(.008,dt);updateHud();
+function gameOver(reason='energy'){
+ if(state!=='playing')return;state='over';const m=Math.floor(distance);if(m>best){best=m;localStorage.setItem('tactileBest',best)}bestText.textContent=`BEST ${best}m`;
+ document.querySelector('.title').innerHTML=reason==='fall'?`💥 추락!<br>${m}m`:`${m}m<br>달렸어!`;
+ document.querySelector('.sub').innerHTML=reason==='fall'?`빈 곳에 떨어지면 바로 게임오버야.<br><b>키보드 발판 → 공중 ASMR 발판 → 다음 키보드</b>로 이어가봐.`:`더 멀리 이어 달려보자.`;
+ startBtn.textContent='다시 달리기';overlay.style.display='grid';updateHud(true);
 }
 
 function drawBackground(t){
- ctx.fillStyle=skyGradient||'#dff4ff';ctx.fillRect(0,0,W,groundY-8);
- ctx.fillStyle='rgba(255,255,255,.72)';for(let i=0;i<4;i++){const x=((i*241-t*9)%(W+220))-100,y=84+(i%3)*84;ctx.beginPath();ctx.ellipse(x,y,38,15,0,0,Math.PI*2);ctx.ellipse(x+31,y+3,26,12,0,0,Math.PI*2);ctx.fill()}
- ctx.fillStyle=plateGradient||'#171c23';ctx.fillRect(0,groundY-10,W,H-groundY+10);ctx.fillStyle='rgba(255,255,255,.10)';ctx.fillRect(0,groundY-9,W,1);
- for(let r=0;r<keyboardCache.length;r++){
-  const item=keyboardCache[r],row=KEY_ROWS[r],rowY=groundY-6+[0,44,93,146][r],shift=((keyboardTravel*row.scale)%item.tw),offset=keyboardMetrics().keyW*row.offset,x=-shift+offset;
-  ctx.drawImage(item.canvas,x-item.tw,rowY);ctx.drawImage(item.canvas,x,rowY);ctx.drawImage(item.canvas,x+item.tw,rowY);
- }
- if(pressedKeyId!==null&&keyFlash>.018){
-  const {keyW,stride}=keyboardMetrics(),cycle=Math.floor(keyboardTravel/stride),scroll=keyboardTravel-cycle*stride,local=pressedKeyId-cycle,x=local*stride-scroll;
-  if(x>-keyW&&x<W+keyW)drawKeyCap(ctx,x,groundY-6,keyW,39,KEY_LABELS[((pressedKeyId%KEY_LABELS.length)+KEY_LABELS.length)%KEY_LABELS.length],true);
+ ctx.fillStyle=skyGradient||'#dff4ff';ctx.fillRect(0,0,W,H);
+ ctx.fillStyle='rgba(255,255,255,.72)';for(let i=0;i<5;i++){const x=((i*241-t*9)%(W+240))-110,y=70+(i%3)*72;ctx.beginPath();ctx.ellipse(x,y,38,15,0,0,Math.PI*2);ctx.ellipse(x+31,y+3,26,12,0,0,Math.PI*2);ctx.fill()}
+ ctx.fillStyle=abyssGradient||'rgba(9,14,19,.65)';ctx.fillRect(0,groundY,W,H-groundY);
+ ctx.fillStyle='rgba(255,255,255,.16)';ctx.fillRect(0,groundY, W,1);
+}
+function drawPlatforms(){
+ const {keyW,stride}=keyboardMetrics();
+ for(const p of platforms){
+  if(p.x>W+80||p.x+p.w<-80)continue;
+  if(p.img)ctx.drawImage(p.img,p.x,p.y-2,p.w,p.visualH);
+  if(p.pressedIndex>=0&&p.pressedTimer>0){
+   const kx=p.x+p.pressedIndex*stride;if(kx+keyW>p.x&&kx<p.x+p.w)drawKeyCap(ctx,kx,p.y-2,keyW,39,KEY_LABELS[(p.pressedIndex+p.seed)%KEY_LABELS.length],true);
+  }
  }
 }
 function drawObject(o){
@@ -225,21 +265,21 @@ function drawObject(o){
 }
 function currentSprite(){let action=player.onGround?player.action:'jump',idx=0;if(action==='run')idx=Math.floor(player.actionTime/.095)%4;else if(action==='jump')idx=player.vy<35?0:1;else if(action==='slide')idx=Math.floor(player.actionTime/.12)%2;else if(action==='crouch')idx=player.actionTime<.13?0:1;return {action,img:sprites[action][idx]}}
 function drawPlayer(){
- const p=player,{action,img}=currentSprite(),scale=Math.max(.72,Math.min(1.18,H/540)),baseline=p.y+p.h,centerX=p.x+p.w/2,jumpHeight=Math.max(0,groundY-baseline),shadowScale=Math.max(.45,1-jumpHeight/(H*.48));
- ctx.save();ctx.globalAlpha=.17*shadowScale;ctx.fillStyle='#071018';ctx.beginPath();ctx.ellipse(centerX,groundY+4,34*shadowScale,7*shadowScale,0,0,Math.PI*2);ctx.fill();ctx.restore();if(!img||!img.complete||!img.naturalWidth)return;
+ const p=player,{action,img}=currentSprite(),scale=Math.max(.72,Math.min(1.18,H/540)),baseline=p.y+p.h,centerX=p.x+p.w/2,jumpHeight=Math.max(0,groundY-baseline),shadowScale=Math.max(.35,1-jumpHeight/(H*.48));
+ const shadowY=groundY+4;ctx.save();ctx.globalAlpha=.12*shadowScale;ctx.fillStyle='#071018';ctx.beginPath();ctx.ellipse(centerX,shadowY,31*shadowScale,6*shadowScale,0,0,Math.PI*2);ctx.fill();ctx.restore();if(!img||!img.complete||!img.naturalWidth)return;
  let targetH=88*scale,xOffset=0,yOffset=2;if(action==='jump'){targetH=84*scale;yOffset=0}if(action==='slide'){targetH=64*scale;xOffset=34*scale;yOffset=3}if(action==='crouch'){targetH=61*scale;yOffset=3}
  const targetW=targetH*(img.naturalWidth/img.naturalHeight),drawX=centerX-targetW/2+xOffset,drawY=baseline-targetH+yOffset;ctx.save();ctx.imageSmoothingEnabled=false;ctx.drawImage(img,Math.round(drawX),Math.round(drawY),Math.round(targetW),Math.round(targetH));ctx.restore();ctx.imageSmoothingEnabled=true;
 }
 function render(t){
- ctx.save();if(shake>.1){renderSeed=(renderSeed+1)&255;const sx=((renderSeed*73)%17-8)/8,sy=((renderSeed*37)%17-8)/8;ctx.translate(sx*shake*.5,sy*shake*.5)}drawBackground(t);
+ ctx.save();if(shake>.1){renderSeed=(renderSeed+1)&255;const sx=((renderSeed*73)%17-8)/8,sy=((renderSeed*37)%17-8)/8;ctx.translate(sx*shake*.5,sy*shake*.5)}drawBackground(t);drawPlatforms();
  for(let i=0;i<objects.length;i++)drawObject(objects[i]);for(let i=0;i<particles.length;i++){const p=particles[i];ctx.globalAlpha=Math.max(0,p.life*2.2);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;if(player)drawPlayer();if(flash>.01){ctx.fillStyle=`rgba(255,255,255,${flash})`;ctx.fillRect(0,0,W,H)}ctx.restore();
 }
 function loop(ts){const dt=Math.min(.033,(ts-last)/1000||0);last=ts;step(dt);render(ts/1000);requestAnimationFrame(loop)}
 async function start(){
- startBtn.disabled=true;startBtn.textContent='사운드 준비중…';await wakeAudio().catch(()=>{});reset();state='playing';overlay.style.display='none';document.querySelector('.title').innerHTML='촉감런<br>ASMR PROTO';document.querySelector('.sub').innerHTML='키보드 위를 달리며 ASMR을 듣고<br>점프해 <b>왁스볼·말랑이·뽁뽁이</b>를 터뜨려봐.';startBtn.disabled=false;startBtn.textContent='탭해서 시작';
+ startBtn.disabled=true;startBtn.textContent='사운드 준비중…';await wakeAudio().catch(()=>{});reset();state='playing';overlay.style.display='none';document.querySelector('.title').innerHTML='촉감런<br>ASMR PROTO';document.querySelector('.sub').innerHTML='키보드 발판과 공중 ASMR 발판을 이어 달려.<br><b>빈 곳에 떨어지면 즉시 게임오버!</b>';startBtn.disabled=false;startBtn.textContent='탭해서 시작';
 }
 startBtn.addEventListener('click',e=>{e.stopPropagation();void start()});
-shell.addEventListener('pointerdown',e=>{if(e.target.tagName==='BUTTON')return;doJump()},{passive:true});
+shell.addEventListener('pointerdown',e=>{if(e.target.tagName==='BUTTON')return;e.preventDefault();doJump()},{passive:false});
 addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','KeyS','KeyW','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();if((e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW')&&!e.repeat)doJump();else if((e.code==='ShiftLeft'||e.code==='ShiftRight')&&!e.repeat)doSlide();else if((e.code==='ArrowDown'||e.code==='KeyS')&&!e.repeat)startCrouch()});
 addEventListener('keyup',e=>{if(e.code==='ArrowDown'||e.code==='KeyS')stopCrouch()});addEventListener('blur',stopCrouch);
 const ua=navigator.userAgent||'';
@@ -274,6 +314,6 @@ if(openChromeBtn)openChromeBtn.addEventListener('click',e=>{
  }else setInstallHelp('카카오톡 메뉴에서 “다른 브라우저로 열기”를 선택한 뒤 설치해줘.',true);
 });
 addEventListener('appinstalled',()=>{if(installBtn)installBtn.style.display='none';if(openChromeBtn)openChromeBtn.style.display='none';setInstallHelp('✅ 설치 완료! 홈 화면에서 촉감런을 실행할 수 있어.',true)});
-if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=10.1-hotfix').catch(()=>{}));
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=11-gap-runner').catch(()=>{}));
 reset();state='menu';loop(performance.now());
 })();
