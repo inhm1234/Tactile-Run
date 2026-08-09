@@ -1,7 +1,7 @@
-const CACHE='tactile-run-v9-mobile-safe';
+const CACHE='tactile-run-v10-key-swap';
 const ASSETS=[
- './','./index.html','./game.js?v=9-mobile-safe','./manifest.webmanifest?v=9','./icons/icon-192.png','./icons/icon-512.png',
- './keyboard1.wav','./keyboard2.wav','./keyboard3.wav','./keyboard4.wav',
+ './','./index.html','./game.js?v=10-key-swap','./manifest.webmanifest?v=10','./icons/icon-192.png','./icons/icon-512.png',
+ './KEY_1.wav','./KEY_2.wav','./KEY_3.wav','./KEY_4.wav','./KEY_5.wav',
  './wax1.wav','./wax2.wav','./wax3.wav','./wax4.wav','./wax5.wav',
  './malrang1.wav','./malrang2.wav','./malrang3.wav',
  './bubble1.wav','./bubble2.wav','./bubble3.wav','./bubble4.wav',

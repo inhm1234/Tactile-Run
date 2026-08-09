@@ -12,7 +12,7 @@ let keyFlash=0,keyboardTravel=0,lastSteppedKey=null,pressedKeyId=null,hudClock=0
 let keyboardCache=[],objectSprites={},renderSeed=0,skyGradient=null,plateGradient=null;
 
 const SAMPLE_FILES={
- keyboard:['./keyboard1.wav','./keyboard2.wav','./keyboard3.wav','./keyboard4.wav'],
+ keyboard:['./KEY_1.wav','./KEY_2.wav','./KEY_3.wav','./KEY_4.wav','./KEY_5.wav'],
  wax:['./wax1.wav','./wax2.wav','./wax3.wav','./wax4.wav','./wax5.wav'],
  jelly:['./malrang1.wav','./malrang2.wav','./malrang3.wav'],
  bubble:['./bubble1.wav','./bubble2.wav','./bubble3.wav','./bubble4.wav']
@@ -273,6 +273,6 @@ openChromeBtn.addEventListener('click',e=>{
  }else setInstallHelp('카카오톡 메뉴에서 “다른 브라우저로 열기”를 선택한 뒤 설치해줘.',true);
 });
 addEventListener('appinstalled',()=>{installBtn.style.display='none';openChromeBtn.style.display='none';setInstallHelp('✅ 설치 완료! 홈 화면에서 촉감런을 실행할 수 있어.',true)});
-if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=9').catch(()=>{}));
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=10-key-swap').catch(()=>{}));
 reset();state='menu';loop(performance.now());
 })();

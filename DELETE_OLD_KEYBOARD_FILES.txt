@@ -1,0 +1,7 @@
+GitHub 저장소에서 아래 기존 키보드 사운드 파일 4개를 삭제하세요.
+keyboard1.wav
+keyboard2.wav
+keyboard3.wav
+keyboard4.wav
+
+게임 코드는 더 이상 이 파일들을 참조하지 않습니다.
