@@ -1,8 +1,9 @@
 {
+  "id":"./",
   "name":"촉감런 ASMR Prototype",
   "short_name":"촉감런",
   "description":"밟고 터뜨리는 ASMR 러너 프로토타입",
-  "start_url":"./",
+  "start_url":"./?source=pwa",
   "scope":"./",
   "display":"standalone",
   "orientation":"landscape",

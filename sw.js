@@ -1,6 +1,6 @@
-const CACHE='tactile-run-v8-optimized-realistic';
+const CACHE='tactile-run-v9-mobile-safe';
 const ASSETS=[
- './','./index.html','./game.js?v=8-optimized-realistic','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png',
+ './','./index.html','./game.js?v=9-mobile-safe','./manifest.webmanifest?v=9','./icons/icon-192.png','./icons/icon-512.png',
  './keyboard1.wav','./keyboard2.wav','./keyboard3.wav','./keyboard4.wav',
  './wax1.wav','./wax2.wav','./wax3.wav','./wax4.wav','./wax5.wav',
  './malrang1.wav','./malrang2.wav','./malrang3.wav',
@@ -12,8 +12,8 @@ self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addA
 self.addEventListener('activate',e=>e.waitUntil(Promise.all([caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))),self.clients.claim()])));
 self.addEventListener('fetch',e=>{
  const u=new URL(e.request.url);
- if(e.request.mode==='navigate'||u.pathname.endsWith('/index.html')||u.pathname.endsWith('/game.js')){
-  e.respondWith(fetch(e.request).then(r=>{const c=r.clone();caches.open(CACHE).then(x=>x.put(e.request,c));return r}).catch(()=>caches.match(e.request)));
+ if(e.request.mode==='navigate'||u.pathname.endsWith('/index.html')||u.pathname.endsWith('/game.js')||u.pathname.endsWith('/manifest.webmanifest')){
+  e.respondWith(fetch(e.request,{cache:'no-store'}).then(r=>{const c=r.clone();caches.open(CACHE).then(x=>x.put(e.request,c));return r}).catch(()=>caches.match(e.request)));
   return;
  }
  e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)));

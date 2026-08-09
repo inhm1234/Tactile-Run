@@ -2,7 +2,7 @@
 'use strict';
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d',{alpha:false,desynchronized:true});
 const shell=document.getElementById('shell'),overlay=document.getElementById('overlay');
-const startBtn=document.getElementById('startBtn'),installBtn=document.getElementById('installBtn');
+const startBtn=document.getElementById('startBtn'),installBtn=document.getElementById('installBtn'),openChromeBtn=document.getElementById('openChromeBtn'),installHelp=document.getElementById('installHelp');
 const hpText=document.getElementById('hpText'),hpFill=document.getElementById('hpFill'),metersEl=document.getElementById('meters');
 const comboN=document.getElementById('comboN'),comboT=document.getElementById('comboT'),toast=document.getElementById('toast'),hint=document.getElementById('hint'),bestText=document.getElementById('bestText'),soundStatus=document.getElementById('soundStatus');
 
@@ -135,17 +135,30 @@ function buildObjectSprites(){
  });
 }
 
+let resizeRaf=0;
 function resize(){
- const r=shell.getBoundingClientRect();W=r.width;H=r.height;
- const coarse=matchMedia('(pointer:coarse)').matches;dpr=Math.min(coarse?1.20:1.50,devicePixelRatio||1);
- canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);ctx.imageSmoothingEnabled=true;
- groundY=H*.69;physicsScale=Math.max(.62,Math.min(1.05,H/620));
+ const r=shell.getBoundingClientRect();W=Math.max(1,r.width);H=Math.max(1,r.height);
+ const coarse=matchMedia('(pointer:coarse)').matches;dpr=Math.min(coarse?1.10:1.50,devicePixelRatio||1);
+ canvas.width=Math.max(1,Math.round(W*dpr));canvas.height=Math.max(1,Math.round(H*dpr));ctx.setTransform(dpr,0,0,dpr,0,0);ctx.imageSmoothingEnabled=true;
+ groundY=H*.69;physicsScale=Math.max(.52,Math.min(1.05,H/620));
  skyGradient=ctx.createLinearGradient(0,0,0,groundY);skyGradient.addColorStop(0,'#dff4ff');skyGradient.addColorStop(1,'#c8ecfa');
  plateGradient=ctx.createLinearGradient(0,groundY-10,0,H);plateGradient.addColorStop(0,'#252b33');plateGradient.addColorStop(.35,'#171c23');plateGradient.addColorStop(1,'#0d1117');
  rebuildKeyboardCache();buildObjectSprites();
  if(player&&player.onGround)player.y=groundY-player.h;
 }
-addEventListener('resize',resize,{passive:true});resize();
+function syncViewport(){
+ const vv=window.visualViewport;
+ const vw=Math.max(1,Math.round(vv?vv.width:window.innerWidth));
+ const vh=Math.max(1,Math.round(vv?vv.height:window.innerHeight));
+ document.documentElement.style.setProperty('--app-w',vw+'px');
+ document.documentElement.style.setProperty('--app-h',vh+'px');
+ cancelAnimationFrame(resizeRaf);resizeRaf=requestAnimationFrame(resize);
+}
+addEventListener('resize',syncViewport,{passive:true});
+addEventListener('orientationchange',()=>setTimeout(syncViewport,120),{passive:true});
+if(window.visualViewport){visualViewport.addEventListener('resize',syncViewport,{passive:true});visualViewport.addEventListener('scroll',syncViewport,{passive:true})}
+if('ResizeObserver' in window)new ResizeObserver(()=>{cancelAnimationFrame(resizeRaf);resizeRaf=requestAnimationFrame(resize)}).observe(shell);
+syncViewport();
 
 function groundKeyUnderPlayer(){
  if(!player||!player.onGround)return null;const {keyW,stride}=keyboardMetrics(),travel=keyboardTravel,cycle=Math.floor(travel/stride),scroll=travel-cycle*stride,footX=player.x+player.w*.50,localIndex=Math.floor((footX+scroll)/stride),keyX=localIndex*stride-scroll;
@@ -229,8 +242,37 @@ startBtn.addEventListener('click',e=>{e.stopPropagation();void start()});
 shell.addEventListener('pointerdown',e=>{if(e.target.tagName==='BUTTON')return;doJump()},{passive:true});
 addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','KeyS','KeyW','ShiftLeft','ShiftRight'].includes(e.code))e.preventDefault();if((e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW')&&!e.repeat)doJump();else if((e.code==='ShiftLeft'||e.code==='ShiftRight')&&!e.repeat)doSlide();else if((e.code==='ArrowDown'||e.code==='KeyS')&&!e.repeat)startCrouch()});
 addEventListener('keyup',e=>{if(e.code==='ArrowDown'||e.code==='KeyS')stopCrouch()});addEventListener('blur',stopCrouch);
-addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;installBtn.style.display='block'});
-installBtn.addEventListener('click',async e=>{e.stopPropagation();if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;installBtn.style.display='none'});
-if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+const ua=navigator.userAgent||'';
+const isAndroid=/Android/i.test(ua),isKakao=/KAKAOTALK/i.test(ua),isStandalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+function setInstallHelp(text,show=true){installHelp.textContent=text;installHelp.classList.toggle('show',show)}
+function setupInstallUI(){
+ if(isStandalone){installBtn.style.display='none';openChromeBtn.style.display='none';setInstallHelp('✅ 앱으로 실행 중이에요.',true);return}
+ if(isKakao&&isAndroid){
+  openChromeBtn.style.display='block';installBtn.style.display='none';
+  setInstallHelp('카카오톡 안에서는 설치 메뉴가 제한될 수 있어요. Chrome으로 연 뒤 Chrome 메뉴의 “앱 설치” 또는 “홈 화면에 추가”를 사용하세요.',true);
+ }else{
+  installBtn.style.display='block';installBtn.textContent='📲 앱 설치';
+  setInstallHelp('설치 창이 바로 안 뜨면 Chrome 오른쪽 위 ⋮ 메뉴에서 “앱 설치” 또는 “홈 화면에 추가”를 선택하세요.',false);
+ }
+}
+setupInstallUI();
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;if(!isKakao){installBtn.style.display='block';installBtn.textContent='📲 앱 설치';setInstallHelp('',false)}});
+installBtn.addEventListener('click',async e=>{
+ e.stopPropagation();
+ if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;installBtn.style.display='none';setInstallHelp('설치가 완료되면 홈 화면의 “촉감런” 아이콘으로 실행해봐.',true);return}
+ setInstallHelp('Chrome 오른쪽 위 ⋮ → “앱 설치” 또는 “홈 화면에 추가”를 눌러줘. 메뉴가 없으면 잠깐 기다렸다가 페이지를 새로고침해봐.',true);
+});
+openChromeBtn.addEventListener('click',e=>{
+ e.stopPropagation();
+ const fallback=location.href.split('#')[0];
+ if(isAndroid){
+  const scheme=location.protocol.replace(':','');
+  const target=location.host+location.pathname+location.search;
+  location.href=`intent://${target}#Intent;scheme=${scheme};package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
+  setTimeout(()=>setInstallHelp('Chrome이 자동으로 열리지 않으면 카카오톡 오른쪽 위 메뉴에서 “다른 브라우저로 열기”를 선택해줘.',true),900);
+ }else setInstallHelp('카카오톡 메뉴에서 “다른 브라우저로 열기”를 선택한 뒤 설치해줘.',true);
+});
+addEventListener('appinstalled',()=>{installBtn.style.display='none';openChromeBtn.style.display='none';setInstallHelp('✅ 설치 완료! 홈 화면에서 촉감런을 실행할 수 있어.',true)});
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=9').catch(()=>{}));
 reset();state='menu';loop(performance.now());
 })();
